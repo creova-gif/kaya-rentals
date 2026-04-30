@@ -7,7 +7,7 @@
 // CORE ENTITIES
 // ============================================================================
 
-export type UserRole = "tenant" | "landlord" | "property_manager" | "admin";
+export type UserRole = "tenant" | "landlord" | "property_manager" | "contractor" | "admin";
 export type VerificationStatus = "unverified" | "email_verified" | "phone_verified" | "id_verified" | "fully_verified";
 
 export interface User {

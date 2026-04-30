@@ -1,8 +1,12 @@
 import { motion } from "motion/react";
-import { Building2, TrendingUp, CheckCircle2, AlertTriangle, ArrowUpRight, Clock, DollarSign, Users, Zap, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Building2, CheckCircle2, ArrowUpRight, Clock, Zap, ChevronRight, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 import { AIContextualHelper } from "../components/AIContextualHelper";
+import { useAuth } from "../contexts/AuthContext";
+import { PropertyAPI, ApplicationAPI, AnalyticsAPI, PaymentAPI } from "../services/backend.service";
+import type { Property, Application, Payment } from "../types/database.types";
 
 // ─── Design tokens ────────────────────────────────────────────
 const G = "#0A7A52";        // Kaya green
@@ -59,33 +63,76 @@ function MetricCard({ label, value, sub, trend, delay = 0 }: { label: string; va
 // ─── Main ──────────────────────────────────────────────────────
 export function DashboardPremium() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const revenueData = [
-    { month: "Oct", v: 24500, id: 'oct-2024' }, 
-    { month: "Nov", v: 25800, id: 'nov-2024' }, 
-    { month: "Dec", v: 26200, id: 'dec-2024' },
-    { month: "Jan", v: 27100, id: 'jan-2025' }, 
-    { month: "Feb", v: 26900, id: 'feb-2025' }, 
-    { month: "Mar", v: 27600, id: 'mar-2025' },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [analytics, setAnalytics] = useState<{
+    totalProperties: number;
+    totalUnits: number;
+    totalApplications: number;
+    pendingApplications: number;
+    totalRevenue: number;
+    pendingPayments: number;
+  } | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
 
-  const applications = [
-    { id: "1", name: "Sarah Kim", unit: "Unit 4A", score: 92, rec: "approve", ratio: "27%", income: "$8,500" },
-    { id: "2", name: "Michael Patel", unit: "Unit 2B", score: 87, rec: "approve", ratio: "29%", income: "$6,800" },
-    { id: "3", name: "Jason Lee", unit: "Unit 1C", score: 68, rec: "review", ratio: "39%", income: "$7,200" },
-  ];
+  useEffect(() => {
+    async function load() {
+      try {
+        const [analyticsData, propertiesData, applicationsData, paymentsData] = await Promise.allSettled([
+          AnalyticsAPI.getDashboard(),
+          PropertyAPI.getAll(),
+          ApplicationAPI.getAll('landlord'),
+          PaymentAPI.getAll(),
+        ]);
+        if (analyticsData.status === 'fulfilled') setAnalytics(analyticsData.value);
+        if (propertiesData.status === 'fulfilled') setProperties(propertiesData.value);
+        if (applicationsData.status === 'fulfilled') setApplications(applicationsData.value.slice(0, 3));
+        if (paymentsData.status === 'fulfilled') setPayments(paymentsData.value);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  // Build revenue chart from payment history (last 6 months)
+  const revenueData = (() => {
+    const months: { month: string; v: number }[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const label = d.toLocaleString('default', { month: 'short' });
+      const total = payments
+        .filter(p => {
+          const pd = p.paidDate ? new Date(p.paidDate) : null;
+          return pd && pd.getFullYear() === d.getFullYear() && pd.getMonth() === d.getMonth() && p.status === 'completed';
+        })
+        .reduce((sum, p) => sum + p.amount, 0);
+      months.push({ month: label, v: total });
+    }
+    return months;
+  })();
+
+  const overduePayments = payments.filter(p => p.status === 'overdue' || p.status === 'late');
+  const paidPayments = payments.filter(p => p.status === 'completed');
+
+  const firstName = user?.name?.split(' ')[0] ?? 'there';
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const todayLabel = new Date().toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' });
 
   const alerts = [
-    { type: "warning", msg: "Unit 3A — rent overdue by 3 days", time: "2h ago" },
-    { type: "success", msg: "3 new high-quality applications received", time: "4h ago" },
-    { type: "info", msg: "Unit 2A lease eligible for increase Apr 1", time: "1d ago" },
-  ];
-
-  const properties = [
-    { name: "123 King St", units: 5, occupied: 5, rev: "$11,500", risk: "low" },
-    { name: "456 Queen St", units: 5, occupied: 4, rev: "$10,200", risk: "medium" },
-    { name: "789 Bloor St", units: 2, occupied: 2, rev: "$5,900", risk: "low" },
-  ];
+    overduePayments.length > 0
+      ? { type: "warning", msg: `${overduePayments.length} overdue payment${overduePayments.length > 1 ? 's' : ''} need attention`, time: "now" }
+      : null,
+    applications.length > 0
+      ? { type: "success", msg: `${applications.length} application${applications.length > 1 ? 's' : ''} pending review`, time: "now" }
+      : null,
+    { type: "info", msg: "Your dashboard is connected to live data", time: "live" },
+  ].filter(Boolean) as { type: string; msg: string; time: string }[];
 
   return (
     <div style={{ minHeight: "100vh", background: BG, fontFamily: "'DM Sans', system-ui, sans-serif", position: "relative" }}>
@@ -93,10 +140,10 @@ export function DashboardPremium() {
       <AIContextualHelper
         context="Dashboard Insights"
         suggestions={[
-          "Analyze my 3 pending applications",
+          "Analyze my pending applications",
           "Show me overdue rent payments",
           "Predict vacancy for next month",
-          "Generate N4 for Unit 3A"
+          "Generate N4 notice",
         ]}
         position="top-right"
       />
@@ -111,52 +158,91 @@ export function DashboardPremium() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: G }} />
-          <span style={{ fontSize: 13, color: MUTED }}>Justin Mafie</span>
-          <div style={{ width: 32, height: 32, borderRadius: "50%", background: GL, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: G }}>JM</div>
+          <span style={{ fontSize: 13, color: MUTED }}>{user?.name ?? '—'}</span>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: GL, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: G }}>
+            {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '?'}
+          </div>
         </div>
       </div>
 
+      {loading && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+          <Loader2 size={32} color={G} style={{ animation: "spin 1s linear infinite" }} />
+          <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
+        </div>
+      )}
+
+      {!loading && (
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "40px 40px 80px" }}>
 
         {/* ── Header ── */}
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ marginBottom: 40 }}>
-          <p style={{ fontSize: 12, color: MUTED, fontWeight: 600, letterSpacing: "0.7px", textTransform: "uppercase", marginBottom: 8 }}>Monday, March 16</p>
+          <p style={{ fontSize: 12, color: MUTED, fontWeight: 600, letterSpacing: "0.7px", textTransform: "uppercase", marginBottom: 8 }}>{todayLabel}</p>
           <h1 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 48, fontWeight: 400, color: TEXT, lineHeight: 1.05, letterSpacing: "-1px" }}>
-            Good evening,<br /><em style={{ fontStyle: "italic", color: G }}>Justin.</em>
+            {greeting},<br /><em style={{ fontStyle: "italic", color: G }}>{firstName}.</em>
           </h1>
-          <p style={{ fontSize: 15, color: MUTED, marginTop: 10 }}>3 applications need review · 1 overdue payment</p>
+          <p style={{ fontSize: 15, color: MUTED, marginTop: 10 }}>
+            {analytics?.pendingApplications
+              ? `${analytics.pendingApplications} application${analytics.pendingApplications > 1 ? 's' : ''} need${analytics.pendingApplications === 1 ? 's' : ''} review`
+              : 'No pending applications'}
+            {overduePayments.length > 0 ? ` · ${overduePayments.length} overdue payment${overduePayments.length > 1 ? 's' : ''}` : ''}
+          </p>
         </motion.div>
 
         {/* ── Action banner ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          style={{ background: TEXT, borderRadius: 16, padding: "20px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32, cursor: "pointer" }}
-          whileHover={{ opacity: 0.95 }}
-          onClick={() => navigate("/applications")}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: G, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Zap size={16} color="#fff" />
+        {(analytics?.pendingApplications ?? 0) > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            style={{ background: TEXT, borderRadius: 16, padding: "20px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32, cursor: "pointer" }}
+            whileHover={{ opacity: 0.95 }}
+            onClick={() => navigate("/app/applications")}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: G, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Zap size={16} color="#fff" />
+              </div>
+              <div>
+                <p style={{ color: "#fff", fontSize: 14, fontWeight: 600, marginBottom: 2 }}>
+                  AI has pre-screened {analytics?.pendingApplications} new applicant{(analytics?.pendingApplications ?? 0) > 1 ? 's' : ''}
+                </p>
+                <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 12 }}>Review and approve or reject from your applications page</p>
+              </div>
             </div>
-            <div>
-              <p style={{ color: "#fff", fontSize: 14, fontWeight: 600, marginBottom: 2 }}>AI has pre-screened 3 new applicants</p>
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 12 }}>Sarah Kim scores 92/100 — immediate approval recommended</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#fff", fontSize: 13, fontWeight: 500 }}>Review now</span>
+              <ArrowUpRight size={16} color="#fff" />
             </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "#fff", fontSize: 13, fontWeight: 500 }}>Review now</span>
-            <ArrowUpRight size={16} color="#fff" />
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
 
         {/* ── Metrics ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
-          <MetricCard label="Monthly Revenue" value="$27,600" trend="+12%" sub="vs last month" delay={0.1} />
-          <MetricCard label="Occupancy" value="92%" sub="11 of 12 units" delay={0.15} />
-          <MetricCard label="Applications" value="6" sub="3 pending review" delay={0.2} />
-          <MetricCard label="Properties" value="3" sub="12 units total" delay={0.25} />
+          <MetricCard
+            label="Monthly Revenue"
+            value={`$${(analytics?.totalRevenue ?? 0).toLocaleString()}`}
+            sub="collected to date"
+            delay={0.1}
+          />
+          <MetricCard
+            label="Total Units"
+            value={`${analytics?.totalUnits ?? 0}`}
+            sub={`across ${analytics?.totalProperties ?? 0} propert${(analytics?.totalProperties ?? 0) === 1 ? 'y' : 'ies'}`}
+            delay={0.15}
+          />
+          <MetricCard
+            label="Applications"
+            value={`${analytics?.totalApplications ?? 0}`}
+            sub={`${analytics?.pendingApplications ?? 0} pending review`}
+            delay={0.2}
+          />
+          <MetricCard
+            label="Properties"
+            value={`${analytics?.totalProperties ?? 0}`}
+            sub={`${analytics?.totalUnits ?? 0} units total`}
+            delay={0.25}
+          />
         </div>
 
         {/* ── Chart + Alerts ── */}
@@ -230,92 +316,118 @@ export function DashboardPremium() {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} style={{ marginBottom: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 26, fontWeight: 400, color: TEXT }}>Applications</h2>
-            <button onClick={() => navigate("/applications")} style={{ fontSize: 13, color: G, fontWeight: 600, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+            <button onClick={() => navigate("/app/applications")} style={{ fontSize: 13, color: G, fontWeight: 600, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
               View all →
             </button>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {applications.map((app, i) => (
-              <motion.div
-                key={app.id}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.45 + i * 0.06 }}
-                onClick={() => navigate(`/applications/${app.id}`)}
-                whileHover={{ x: 4 }}
-                style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 14, padding: "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  {/* Score ring */}
-                  <div style={{
-                    width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                    background: app.score >= 85 ? GL : app.score >= 70 ? "#FEF3C7" : "#FDECEA",
-                    fontSize: 16, fontWeight: 700,
-                    color: app.score >= 85 ? G : app.score >= 70 ? "#B45309" : "#C0392B"
-                  }}>
-                    {app.score}
+          {applications.length === 0 ? (
+            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 14, padding: "32px", textAlign: "center" }}>
+              <p style={{ color: MUTED, fontSize: 14 }}>No applications yet. Add a property and list a unit to start receiving applications.</p>
+              <button onClick={() => navigate("/app/properties/add")} style={{ marginTop: 16, padding: "10px 20px", background: G, color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                Add your first property →
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {applications.map((app, i) => (
+                <motion.div
+                  key={app.id}
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.45 + i * 0.06 }}
+                  onClick={() => navigate(`/app/applications/${app.id}`)}
+                  whileHover={{ x: 4 }}
+                  style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 14, padding: "18px 22px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                    <div style={{
+                      width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                      background: (app.aiRiskScore ?? 0) >= 85 ? GL : (app.aiRiskScore ?? 0) >= 70 ? "#FEF3C7" : "#FDECEA",
+                      fontSize: 16, fontWeight: 700,
+                      color: (app.aiRiskScore ?? 0) >= 85 ? G : (app.aiRiskScore ?? 0) >= 70 ? "#B45309" : "#C0392B"
+                    }}>
+                      {app.aiRiskScore ?? '—'}
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 15, fontWeight: 600, color: TEXT, marginBottom: 3 }}>
+                        {app.employer || app.employmentStatus || 'Applicant'}
+                      </p>
+                      <p style={{ fontSize: 12, color: MUTED }}>
+                        Income ${(app.monthlyIncome ?? 0).toLocaleString()}/mo · {app.status}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p style={{ fontSize: 15, fontWeight: 600, color: TEXT, marginBottom: 3 }}>{app.name}</p>
-                    <p style={{ fontSize: 12, color: MUTED }}>{app.unit} · Income {app.income} · Ratio {app.ratio}</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <KayaBadge
+                      label={app.aiRecommendation === "approve" ? "Approve" : app.aiRecommendation === "reject" ? "Reject" : "Review"}
+                      color={app.aiRecommendation === "approve" ? "green" : app.aiRecommendation === "reject" ? "red" : "amber"}
+                    />
+                    <ChevronRight size={16} color={MUTED} />
                   </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <KayaBadge
-                    label={app.rec === "approve" ? "Approve" : "Review"}
-                    color={app.rec === "approve" ? "green" : "amber"}
-                  />
-                  <ChevronRight size={16} color={MUTED} />
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </motion.div>
 
         {/* ── Properties ── */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}>
           <h2 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 26, fontWeight: 400, color: TEXT, marginBottom: 16 }}>Properties</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-            {properties.map((p, i) => (
-              <motion.div
-                key={p.name}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 + i * 0.07 }}
-                whileHover={{ y: -4, boxShadow: "0 12px 32px rgba(0,0,0,0.08)" }}
-                style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 16, padding: "24px", cursor: "pointer", transition: "box-shadow 0.2s" }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Building2 size={18} color={G} />
-                  </div>
-                  <KayaBadge label={p.risk === "low" ? "Healthy" : "Attention"} color={p.risk === "low" ? "green" : "amber"} />
-                </div>
-                <p style={{ fontFamily: "'Instrument Serif', serif", fontSize: 18, color: TEXT, marginBottom: 16 }}>{p.name}</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[
-                    ["Occupied", `${p.occupied} / ${p.units}`],
-                    ["Revenue", p.rev],
-                  ].map(([l, v]) => (
-                    <div key={l} style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 12, color: MUTED }}>{l}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>{v}</span>
+          {properties.length === 0 ? (
+            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 14, padding: "48px", textAlign: "center" }}>
+              <Building2 size={40} color={MUTED} style={{ marginBottom: 16 }} />
+              <p style={{ color: MUTED, fontSize: 14, marginBottom: 16 }}>No properties yet. Add your first property to get started.</p>
+              <button onClick={() => navigate("/app/properties/add")} style={{ padding: "12px 24px", background: G, color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                Add property →
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+              {properties.map((p, i) => (
+                <motion.div
+                  key={p.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.6 + i * 0.07 }}
+                  whileHover={{ y: -4, boxShadow: "0 12px 32px rgba(0,0,0,0.08)" }}
+                  onClick={() => navigate(`/app/properties/${p.id}`)}
+                  style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 16, padding: "24px", cursor: "pointer", transition: "box-shadow 0.2s" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Building2 size={18} color={G} />
                     </div>
-                  ))}
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                    <KayaBadge label="Active" color="green" />
+                  </div>
+                  <p style={{ fontFamily: "'Instrument Serif', serif", fontSize: 18, color: TEXT, marginBottom: 4 }}>{p.name}</p>
+                  <p style={{ fontSize: 12, color: MUTED, marginBottom: 16 }}>{p.address}, {p.city}</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {[
+                      ["Total Units", `${p.totalUnits}`],
+                      ["Type", p.propertyType.replace('_', ' ')],
+                    ].map(([l, v]) => (
+                      <div key={l} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12, color: MUTED }}>{l}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: TEXT, textTransform: "capitalize" }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </motion.div>
 
         {/* ── Rent status ── */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} style={{ marginTop: 32 }}>
-          <h2 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 26, fontWeight: 400, color: TEXT, marginBottom: 16 }}>Rent status — March 2026</h2>
+          <h2 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 26, fontWeight: 400, color: TEXT, marginBottom: 16 }}>
+            Rent status — {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
+          </h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
             {[
-              { label: "Paid on time", val: 9, color: G, bg: GL, icon: <CheckCircle2 size={22} color={G} /> },
-              { label: "Overdue", val: 1, color: "#B45309", bg: "#FEF3C7", icon: <Clock size={22} color="#B45309" /> },
-              { label: "Vacant", val: 2, color: MUTED, bg: BG, icon: <Building2 size={22} color={MUTED} /> },
+              { label: "Paid", val: paidPayments.length, color: G, bg: GL, icon: <CheckCircle2 size={22} color={G} /> },
+              { label: "Overdue", val: overduePayments.length, color: "#B45309", bg: "#FEF3C7", icon: <Clock size={22} color="#B45309" /> },
+              { label: "Pending", val: payments.filter(p => p.status === 'pending').length, color: MUTED, bg: BG, icon: <Building2 size={22} color={MUTED} /> },
             ].map(s => (
               <div key={s.label} style={{ background: s.bg, borderRadius: 14, padding: "24px", border: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 16 }}>
                 {s.icon}
@@ -329,6 +441,7 @@ export function DashboardPremium() {
         </motion.div>
 
       </div>
+      )}
     </div>
   );
 }

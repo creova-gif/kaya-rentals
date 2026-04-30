@@ -20,7 +20,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
+  signUp: (email: string, password: string, name: string, role?: 'landlord' | 'tenant' | 'contractor') => Promise<{ success: boolean; error?: string }>;
   signIn: (email: string, password: string) => Promise<void>;
   signInDemoTenant: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -104,14 +104,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (
-    email: string, 
-    password: string, 
-    name: string
-  ): Promise<void> => {
+    email: string,
+    password: string,
+    name: string,
+    role: 'landlord' | 'tenant' | 'contractor' = 'landlord'
+  ): Promise<{ success: boolean; error?: string }> => {
     try {
       setLoading(true);
 
-      // Call backend to create user with admin privileges
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/auth/signup`,
         {
@@ -120,7 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${publicAnonKey}`,
           },
-          body: JSON.stringify({ email, password, name }),
+          body: JSON.stringify({ email, password, name, role }),
         }
       );
 
@@ -128,17 +128,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         console.error('❌ Signup error:', result);
-        throw new Error(result.error || 'Failed to create account');
+        return { success: false, error: result.error || 'Failed to create account' };
       }
 
       console.log('✅ Signup successful:', result);
 
-      // Now sign in the user
       await signIn(email, password);
+      return { success: true };
 
     } catch (error: any) {
       console.error('❌ Signup error:', error);
-      throw new Error(error.message || 'An unexpected error occurred');
+      return { success: false, error: error.message || 'An unexpected error occurred' };
     } finally {
       setLoading(false);
     }

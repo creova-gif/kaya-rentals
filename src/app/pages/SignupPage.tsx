@@ -17,7 +17,7 @@ export function SignupPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'landlord' | 'tenant'>('landlord');
+  const [role, setRole] = useState<'landlord' | 'tenant' | 'contractor'>('landlord');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -40,9 +40,9 @@ export function SignupPage() {
       if (result.success) {
         setSuccess(true);
         ErrorHandler.success('Account created!', 'Redirecting to dashboard...');
-        // Redirect to dashboard after successful signup and auto-login
+        const destination = role === 'tenant' ? '/tenant' : role === 'contractor' ? '/app/contractor-marketplace' : '/app';
         setTimeout(() => {
-          navigate('/app');
+          navigate(destination);
         }, 1500);
       } else {
         setError(result.error || 'Signup failed');
@@ -195,8 +195,8 @@ export function SignupPage() {
             }}>
               I am a...
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {(['landlord', 'tenant'] as const).map((r) => (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              {(['landlord', 'tenant', 'contractor'] as const).map((r) => (
                 <button
                   key={r}
                   type="button"
