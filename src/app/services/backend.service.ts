@@ -266,6 +266,17 @@ export const MaintenanceAPI = {
     const result = await apiFetch('/maintenance');
     return result.requests || [];
   },
+
+  /**
+   * Update a maintenance request (e.g. change status)
+   */
+  async update(id: string, data: Partial<MaintenanceRequest>): Promise<MaintenanceRequest> {
+    const result = await apiFetch(`/maintenance/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return result.request;
+  },
 };
 
 // ============================================================================

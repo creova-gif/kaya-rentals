@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { PaymentAPI } from "../services/backend.service";
 import { motion } from "motion/react";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 import {
   DollarSign,
   CreditCard,
@@ -25,6 +27,7 @@ import {
   ParkingCircle,
 } from "lucide-react";
 type LIcon=React.ComponentType<{size?:number;color?:string}>;
+const MU = "#767570";
 
 interface Payment {
   id: string;
@@ -37,54 +40,43 @@ interface Payment {
   paidDate?: string;
 }
 
+const normalizePaymentStatus = (s: string): Payment["status"] => {
+  if (s === "completed") return "paid";
+  if (s === "late" || s === "overdue") return "late";
+  if (s === "processing") return "processing";
+  return "pending";
+};
+
 export function RentCollection() {
   const [selectedMethod, setSelectedMethod] = useState<"interac" | "stripe" | "auto-pad">("interac");
   const [showInteracInstructions, setShowInteracInstructions] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [activeTab, setActiveTab] = useState<"residential" | "cam">("residential");
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(true);
+
+  useEffect(() => {
+    PaymentAPI.getAll()
+      .then(raw => setPayments(
+        raw.map((p: any) => ({
+          id: p.id,
+          tenantName: p.tenantName ?? p.tenantId ?? "Tenant",
+          unit: p.unitId ?? p.unit ?? "—",
+          amount: p.amount ?? 0,
+          dueDate: p.dueDate ? new Date(p.dueDate).toISOString().split("T")[0] : "",
+          status: normalizePaymentStatus(p.status ?? "pending"),
+          method: p.method ?? undefined,
+          paidDate: p.paidDate ? new Date(p.paidDate).toISOString().split("T")[0] : undefined,
+        }))
+      ))
+      .catch(() => setPayments([]))
+      .finally(() => setLoadingPayments(false));
+  }, []);
 
   const camTenants = [
     { tenant: "Maple Leaf Café Inc.", unit: "Suite 101", sqft: 1400, baseRent: 5600, estimatedCAM: 1400, actualCAM: 1628, leaseType: "NNN" as const },
     { tenant: "TechNest Solutions Ltd.", unit: "Suite 305", sqft: 2400, baseRent: 9200, estimatedCAM: 0, actualCAM: 0, leaseType: "Gross" as const },
     { tenant: "GreenByte Digital Inc.", unit: "Suite 410", sqft: 1600, baseRent: 5600, estimatedCAM: 1120, actualCAM: 984, leaseType: "NNN" as const },
-  ];
-
-  const payments: Payment[] = [
-    {
-      id: "1",
-      tenantName: "Sarah Kim",
-      unit: "4A",
-      amount: 2300,
-      dueDate: "2026-03-01",
-      status: "paid",
-      method: "interac",
-      paidDate: "2026-02-28",
-    },
-    {
-      id: "2",
-      tenantName: "John Doe",
-      unit: "1B",
-      amount: 2800,
-      dueDate: "2026-03-01",
-      status: "pending",
-    },
-    {
-      id: "3",
-      tenantName: "Alice Smith",
-      unit: "2C",
-      amount: 2100,
-      dueDate: "2026-03-01",
-      status: "late",
-    },
-    {
-      id: "4",
-      tenantName: "Bob Johnson",
-      unit: "3A",
-      amount: 2500,
-      dueDate: "2026-03-01",
-      status: "processing",
-      method: "stripe",
-    },
   ];
 
   const totalExpected = payments.reduce((sum, p) => sum + p.amount, 0);
@@ -459,9 +451,20 @@ export function RentCollection() {
         <div className="bg-white border border-[rgba(0,0,0,0.07)] rounded-xl overflow-hidden shadow-lg">
           <div className="px-6 py-5 border-b border-[rgba(0,0,0,0.05)]">
             <h3 className="text-[20px] font-normal text-[#0E0F0C]" style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-              March 2026 Payments
+              Current Payments
             </h3>
           </div>
+
+          {loadingPayments ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 48 }}>
+              <Loader2 size={24} color="#0A7A52" style={{ animation: "spin 1s linear infinite" }} />
+              <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+            </div>
+          ) : payments.length === 0 ? (
+            <div style={{ padding: "48px 24px", textAlign: "center", color: "#767570", fontSize: 14 }}>
+              No payments found. Add tenants to start collecting rent.
+            </div>
+          ) : null}
 
           <div className="divide-y divide-[rgba(0,0,0,0.05)]">
             {payments.map((payment, idx) => (

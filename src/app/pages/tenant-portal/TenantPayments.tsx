@@ -1,7 +1,8 @@
-import { Download, CheckCircle2, CreditCard, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { Download, CheckCircle2, CreditCard, Sparkles, X, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
+import { PaymentAPI } from "../../services/backend.service";
 
 const G = "#0A7A52";
 const GL = "#E5F4EE";
@@ -32,18 +33,34 @@ type Modal = "pay" | "autopay" | "addmethod" | null;
 export function TenantPayments() {
   const [modal, setModal] = useState<Modal>(null);
   const [selectedMethod, setSelectedMethod] = useState(0);
+  const [paymentHistory, setPaymentHistory] = useState<{ month: string; date: string; amount: number }[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [nextRentAmount, setNextRentAmount] = useState(0);
 
-  const paymentHistory = [
-    { month: "Mar 2026", date: "Mar 1", amount: 2300 },
-    { month: "Feb 2026", date: "Feb 1", amount: 2300 },
-    { month: "Jan 2026", date: "Jan 1", amount: 2300 },
-    { month: "Dec 2025", date: "Dec 1", amount: 2300 },
-    { month: "Nov 2025", date: "Nov 1", amount: 2300 },
-    { month: "Oct 2025", date: "Oct 1", amount: 2300 },
-    { month: "Sep 2025", date: "Sep 1", amount: 2300 },
-  ];
+  useEffect(() => {
+    PaymentAPI.getAll()
+      .then(raw => {
+        const paid = raw
+          .filter((p: any) => p.status === "completed" || p.status === "paid")
+          .sort((a: any, b: any) => new Date(b.paidDate ?? b.dueDate).getTime() - new Date(a.paidDate ?? a.dueDate).getTime());
+        setPaymentHistory(paid.map((p: any) => {
+          const d = new Date(p.paidDate ?? p.dueDate);
+          return {
+            month: d.toLocaleDateString("en-CA", { month: "short", year: "numeric" }),
+            date: d.toLocaleDateString("en-CA", { month: "short", day: "numeric" }),
+            amount: p.amount ?? 0,
+          };
+        }));
+        const upcoming = raw.find((p: any) => p.status !== "completed" && p.status !== "paid");
+        if (upcoming) setNextRentAmount(upcoming.amount ?? 0);
+        else if (raw.length) setNextRentAmount(raw[raw.length - 1].amount ?? 0);
+      })
+      .catch(() => setPaymentHistory([]))
+      .finally(() => setLoadingHistory(false));
+  }, []);
 
   const totalPaid = paymentHistory.reduce((s, p) => s + p.amount, 0);
+  const rentAmount = nextRentAmount || (paymentHistory[0]?.amount ?? 0);
   const nextDue = computeNextDue();
   const daysLeft = daysUntil(nextDue.iso);
 
@@ -72,7 +89,7 @@ export function TenantPayments() {
           <div style={{ background: "#F8F7F4", borderRadius: 12, padding: 14, textAlign: "center" }}>
             <p style={{ fontSize: 9, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 3 }}>Next Due</p>
             <p style={{ fontFamily: SERIF, fontSize: 22, color: TX }}>{nextDue.label}</p>
-            <p style={{ fontSize: 9, color: G }}>$2,300</p>
+            <p style={{ fontSize: 9, color: G }}>{rentAmount ? `$${rentAmount.toLocaleString()}` : "—"}</p>
           </div>
         </div>
 
@@ -84,7 +101,7 @@ export function TenantPayments() {
         >
           <div>
             <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 3 }}>{nextDue.monthYear}</p>
-            <p style={{ fontFamily: SERIF, fontSize: 30, color: "#fff", lineHeight: 1 }}>$2,300.00</p>
+            <p style={{ fontFamily: SERIF, fontSize: 30, color: "#fff", lineHeight: 1 }}>{rentAmount ? `$${rentAmount.toLocaleString()}.00` : "—"}</p>
             <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>Due in {daysLeft} days</p>
           </div>
           <button
@@ -119,6 +136,15 @@ export function TenantPayments() {
           <div style={{ padding: "18px 22px 14px" }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.6px" }}>Payment History</p>
           </div>
+          {loadingHistory && (
+            <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
+              <Loader2 size={20} color={G} style={{ animation: "spin 1s linear infinite" }} />
+              <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+            </div>
+          )}
+          {!loadingHistory && paymentHistory.length === 0 && (
+            <p style={{ padding: "16px 22px", fontSize: 13, color: MU }}>No payment history yet.</p>
+          )}
           {paymentHistory.map((p, idx) => (
             <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 22px", borderBottom: idx < paymentHistory.length - 1 ? "1px solid rgba(0,0,0,0.05)" : "none", borderLeft: `3px solid ${G}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -188,7 +214,7 @@ export function TenantPayments() {
                   </div>
                   <div style={{ background: GL, borderRadius: 14, padding: 16, marginBottom: 18, textAlign: "center" }}>
                     <p style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 5 }}>Amount due — {nextDue.fullLabel}</p>
-                    <p style={{ fontFamily: SERIF, fontSize: 44, color: "#085040", lineHeight: 1 }}>$2,300.00</p>
+                    <p style={{ fontFamily: SERIF, fontSize: 44, color: "#085040", lineHeight: 1 }}>${rentAmount.toLocaleString()}.00</p>
                     <p style={{ fontSize: 11, color: G, marginTop: 4 }}>{daysLeft} days remaining</p>
                   </div>
                   <p style={{ fontSize: 10, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 10 }}>Payment method</p>
@@ -209,11 +235,11 @@ export function TenantPayments() {
                     ))}
                   </div>
                   <div style={{ padding: "10px 14px", background: "#F8F7F4", borderRadius: 10, marginBottom: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: MU }}><span>Rent</span><span style={{ color: TX, fontWeight: 600 }}>$2,300.00</span></div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: MU }}><span>Rent</span><span style={{ color: TX, fontWeight: 600 }}>${rentAmount.toLocaleString()}.00</span></div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: MU, marginTop: 4 }}><span>Processing fee</span><span style={{ color: G, fontWeight: 600 }}>Free</span></div>
-                    <div style={{ borderTop: "1px solid rgba(0,0,0,0.06)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: TX }}><span>Total</span><span>$2,300.00</span></div>
+                    <div style={{ borderTop: "1px solid rgba(0,0,0,0.06)", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: TX }}><span>Total</span><span>${rentAmount.toLocaleString()}.00</span></div>
                   </div>
-                  <button onClick={() => { setModal(null); toast.success("$2,300 payment sent. Digital receipt emailed."); }} style={{ width: "100%", padding: 13, background: G, color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}>Confirm Payment →</button>
+                  <button onClick={() => { setModal(null); toast.success(`$${rentAmount.toLocaleString()} payment sent. Digital receipt emailed.`); }} style={{ width: "100%", padding: 13, background: G, color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}>Confirm Payment →</button>
                 </>
               )}
 
@@ -227,7 +253,7 @@ export function TenantPayments() {
                     <p style={{ fontSize: 13, fontWeight: 600, color: "#085040", marginBottom: 3 }}>✓ Auto-Pay is Active</p>
                     <p style={{ fontSize: 11, color: G }}>Rent is automatically charged on the 1st of each month</p>
                   </div>
-                  {[["Payment card", "Visa ending 4242"], ["Charge date", "1st of every month"], ["Next charge", `${nextDue.fullLabel} · $2,300`], ["Notification", "24 hrs before charge"]].map(r => (
+                  {[["Payment card", "Visa ending 4242"], ["Charge date", "1st of every month"], ["Next charge", `${nextDue.fullLabel} · $${rentAmount.toLocaleString()}`], ["Notification", "24 hrs before charge"]].map(r => (
                     <div key={r[0]} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
                       <span style={{ fontSize: 12, color: MU }}>{r[0]}</span>
                       <span style={{ fontSize: 12, fontWeight: 600, color: TX }}>{r[1]}</span>

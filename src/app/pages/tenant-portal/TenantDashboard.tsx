@@ -1,8 +1,11 @@
 import { Home, CreditCard, FileText, Wrench, Calendar, Bell, Sparkles } from "lucide-react";
 import { Link } from "react-router";
 import { motion } from "motion/react";
+import { useEffect, useState } from "react";
 import { TenantApplicationProgress } from "../../components/TenantApplicationProgress";
 import { GamificationBadge } from "../../components/GamificationBadge";
+import { useAuth } from "../../contexts/AuthContext";
+import { PaymentAPI } from "../../services/backend.service";
 
 const G = "#0A7A52";
 const GL = "#E5F4EE";
@@ -12,21 +15,46 @@ const SANS = "'DM Sans', system-ui, sans-serif";
 const SERIF = "'Instrument Serif', Georgia, serif";
 
 export function TenantDashboard() {
-  const leaseInfo = {
-    unit: "Unit 4A",
-    address: "123 King Street, Toronto",
-    rent: 2300,
-    leaseStart: "Jan 1, 2025",
-    leaseEnd: "Dec 31, 2025",
-    daysRemaining: 292,
-  };
+  const { user } = useAuth();
+  const firstName = user?.user_metadata?.full_name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "there";
 
-  const upcomingPayment = {
-    amount: 2300,
-    dueDate: "Apr 1, 2026",
-    daysUntil: 18,
-    autoPayEnabled: true,
-  };
+  const [leaseInfo, setLeaseInfo] = useState({
+    unit: "—",
+    address: "—",
+    rent: 0,
+    leaseStart: "—",
+    leaseEnd: "—",
+    daysRemaining: 0,
+  });
+
+  const [upcomingPayment, setUpcomingPayment] = useState({
+    amount: 0,
+    dueDate: "—",
+    daysUntil: 0,
+    autoPayEnabled: false,
+  });
+
+  useEffect(() => {
+    PaymentAPI.getAll()
+      .then(raw => {
+        if (!raw.length) return;
+        const next = raw
+          .filter((p: any) => p.status !== "completed" && p.status !== "paid")
+          .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0]
+          ?? raw[raw.length - 1];
+        if (!next) return;
+        const due = new Date(next.dueDate);
+        const daysLeft = Math.max(0, Math.ceil((due.getTime() - Date.now()) / 86400000));
+        setUpcomingPayment({
+          amount: next.amount ?? 0,
+          dueDate: due.toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }),
+          daysUntil: daysLeft,
+          autoPayEnabled: false,
+        });
+        setLeaseInfo(prev => ({ ...prev, rent: next.amount ?? prev.rent, unit: next.unitId ?? prev.unit }));
+      })
+      .catch(() => {});
+  }, []);
 
   const quickActions = [
     { name: "Make Payment", icon: CreditCard, href: "/tenant/payments" },
@@ -47,7 +75,7 @@ export function TenantDashboard() {
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
           <p style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 4 }}>Home</p>
-          <h1 style={{ fontFamily: SERIF, fontSize: 36, fontWeight: 400, color: TX, letterSpacing: "-1px", lineHeight: 1 }}>Welcome back, Sarah!</h1>
+          <h1 style={{ fontFamily: SERIF, fontSize: 36, fontWeight: 400, color: TX, letterSpacing: "-1px", lineHeight: 1 }}>Welcome back, {firstName}!</h1>
           <p style={{ fontSize: 14, color: MU, marginTop: 6 }}>Here's everything about your rental</p>
         </motion.div>
 

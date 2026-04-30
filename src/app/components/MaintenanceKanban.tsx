@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { motion } from "motion/react";
-import { Wrench, AlertTriangle, Clock, CheckCircle2, Image as ImageIcon, Calendar } from "lucide-react";
+import { Wrench, AlertTriangle, Clock, CheckCircle2, Image as ImageIcon, Calendar, Loader2 } from "lucide-react";
+import { MaintenanceAPI } from "../services/backend.service";
 
 interface MaintenanceRequest {
   id: string;
@@ -16,7 +17,20 @@ interface MaintenanceRequest {
   estimatedCost?: number;
   hasPhoto: boolean;
   assignedTo?: string;
+  status: string;
 }
+
+const toKanbanStatus = (s: string): string => {
+  if (s === "in_progress" || s === "assigned") return "in-progress";
+  if (s === "completed") return "completed";
+  return "open";
+};
+
+const toApiStatus = (kanban: string): string => {
+  if (kanban === "in-progress") return "in_progress";
+  if (kanban === "completed") return "completed";
+  return "submitted";
+};
 
 interface KanbanColumnProps {
   title: string;
@@ -140,84 +154,34 @@ const KanbanColumn = ({ title, status, requests, onDrop, icon: Icon, color }: Ka
 };
 
 export function MaintenanceKanban() {
-  const [requests, setRequests] = useState<MaintenanceRequest[]>([
-    {
-      id: "1",
-      title: "Leaking faucet in bathroom",
-      property: "123 King St",
-      unit: "Unit 4A",
-      priority: "medium",
-      category: "Plumbing",
-      description: "Bathroom sink faucet dripping",
-      submittedDate: "Mar 12, 2026",
-      estimatedCost: 150,
-      hasPhoto: true,
-      assignedTo: "Mike's Plumbing"
-    },
-    {
-      id: "2",
-      title: "Broken dishwasher",
-      property: "456 Queen St",
-      unit: "Unit 2B",
-      priority: "high",
-      category: "Appliance",
-      description: "Dishwasher not starting",
-      submittedDate: "Mar 14, 2026",
-      estimatedCost: 350,
-      hasPhoto: true
-    },
-    {
-      id: "3",
-      title: "Heating issue",
-      property: "123 King St",
-      unit: "Unit 1A",
-      priority: "high",
-      category: "HVAC",
-      description: "No heat in bedroom",
-      submittedDate: "Mar 10, 2026",
-      estimatedCost: 200,
-      hasPhoto: false,
-      assignedTo: "HVAC Pro"
-    },
-    {
-      id: "4",
-      title: "Door lock replacement",
-      property: "789 Bloor St",
-      unit: "Unit 3C",
-      priority: "low",
-      category: "Hardware",
-      description: "Front door lock sticking",
-      submittedDate: "Mar 13, 2026",
-      estimatedCost: 80,
-      hasPhoto: false
-    },
-    {
-      id: "5",
-      title: "Paint touch-up needed",
-      property: "123 King St",
-      unit: "Unit 5B",
-      priority: "low",
-      category: "Cosmetic",
-      description: "Wall scuffs in hallway",
-      submittedDate: "Mar 11, 2026",
-      estimatedCost: 100,
-      hasPhoto: true
-    }
-  ]);
+  const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [requestStatuses, setRequestStatuses] = useState<Record<string, string>>({
-    "1": "in-progress",
-    "2": "open",
-    "3": "in-progress",
-    "4": "open",
-    "5": "completed"
-  });
+  useEffect(() => {
+    MaintenanceAPI.getAll()
+      .then(raw => setRequests(
+        raw.map((r: any) => ({
+          id: r.id,
+          title: r.title ?? "Untitled Request",
+          property: r.propertyId ?? "—",
+          unit: r.unitId ?? "—",
+          priority: (r.priority === "emergency" ? "high" : r.priority) ?? "low",
+          category: r.category ?? "General",
+          description: r.description ?? "",
+          submittedDate: r.submittedAt ? new Date(r.submittedAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }) : "—",
+          estimatedCost: r.estimatedCost,
+          hasPhoto: Array.isArray(r.photos) && r.photos.length > 0,
+          assignedTo: r.assignedTo,
+          status: toKanbanStatus(r.status ?? "submitted"),
+        }))
+      ))
+      .catch(() => setRequests([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleDrop = (requestId: string, newStatus: string) => {
-    setRequestStatuses(prev => ({
-      ...prev,
-      [requestId]: newStatus
-    }));
+    setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: newStatus } : r));
+    MaintenanceAPI.update(requestId, { status: toApiStatus(newStatus) as any }).catch(() => {});
   };
 
   const columns = [
@@ -241,6 +205,15 @@ export function MaintenanceKanban() {
     }
   ];
 
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 64 }}>
+        <Loader2 size={28} color="#0A7A52" style={{ animation: "spin 1s linear infinite" }} />
+        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
+
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="flex gap-6 overflow-x-auto pb-4">
@@ -249,7 +222,7 @@ export function MaintenanceKanban() {
             key={column.status}
             title={column.title}
             status={column.status}
-            requests={requests.filter(req => requestStatuses[req.id] === column.status)}
+            requests={requests.filter(req => req.status === column.status)}
             onDrop={handleDrop}
             icon={column.icon}
             color={column.color}
