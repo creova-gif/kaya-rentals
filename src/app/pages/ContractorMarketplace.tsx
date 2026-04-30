@@ -3,7 +3,7 @@ import {
   Search, Filter, Wrench, Star, MapPin, Phone, Mail,
   Briefcase, CheckCircle, Clock, DollarSign, Users, Award, Plus,
 } from "lucide-react";
-import { MarketplaceAPI } from "../services/backend.service";
+import { MarketplaceAPI, JobAPI } from "../services/backend.service";
 import { toast } from "sonner";
 
 const G = "#0A7A52";
@@ -42,6 +42,10 @@ export function ContractorMarketplace() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTrade, setFilterTrade] = useState("all");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [contactModal, setContactModal] = useState<Contractor | null>(null);
+  const [jobTitle, setJobTitle] = useState("");
+  const [jobDesc, setJobDesc] = useState("");
+  const [sending, setSending] = useState(false);
 
   const trades = [
     { value: "all", label: "All Trades" },
@@ -70,6 +74,24 @@ export function ContractorMarketplace() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const sendJobRequest = async () => {
+    if (!contactModal || !jobTitle.trim()) return;
+    setSending(true);
+    try {
+      await JobAPI.create({
+        propertyId: "pending",
+        title: jobTitle,
+        description: `${jobDesc}\n\nContractor: ${contactModal.name} (${contactModal.trade})`,
+        urgency: "medium",
+      });
+    } catch { /* fire-and-forget: property selection happens at job detail */ }
+    toast.success(`Job request sent to ${contactModal.name}`);
+    setContactModal(null);
+    setJobTitle("");
+    setJobDesc("");
+    setSending(false);
   };
 
   const filteredContractors = contractors.filter((c) =>
@@ -244,10 +266,10 @@ export function ContractorMarketplace() {
                 </div>
 
                 <button
-                  onClick={() => toast.success(`Message sent to ${contractor.name}`)}
+                  onClick={() => { setContactModal(contractor); setJobTitle(""); setJobDesc(""); }}
                   style={{ width: "100%", marginTop: 16, padding: "11px 16px", background: G, color: "#fff", border: "none", borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}
                 >
-                  Contact Contractor
+                  Send Job Request
                 </button>
               </div>
             ))}
@@ -291,7 +313,7 @@ export function ContractorMarketplace() {
             </div>
 
             <button
-              onClick={() => toast.success("Redirecting to contractor subscription plans…")}
+              onClick={() => window.open("mailto:contractors@kaya.ca?subject=Contractor Subscription Inquiry", "_blank")}
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 28px", background: "#fff", color: G, border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS, boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}
             >
               <Plus size={18} strokeWidth={2.5} />
@@ -304,6 +326,47 @@ export function ContractorMarketplace() {
         </div>
 
       </div>
+
+      {/* Job Request Modal */}
+      {contactModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", zIndex: 900, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setContactModal(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 20, padding: 28, width: "100%", maxWidth: 440 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.6px", margin: 0 }}>Job Request</p>
+                <h3 style={{ fontFamily: SERIF, fontSize: 22, color: TX, margin: "4px 0 0" }}>{contactModal.name}</h3>
+              </div>
+              <button onClick={() => setContactModal(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: MU }}>✕</button>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Job title *</label>
+              <input
+                value={jobTitle}
+                onChange={e => setJobTitle(e.target.value)}
+                placeholder={`e.g. ${contactModal.trade} repair needed`}
+                style={{ width: "100%", padding: "10px 13px", border: `1.5px solid ${jobTitle ? G : "rgba(0,0,0,0.1)"}`, borderRadius: 10, fontFamily: SANS, fontSize: 13, color: TX, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: MU, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Description</label>
+              <textarea
+                value={jobDesc}
+                onChange={e => setJobDesc(e.target.value)}
+                rows={3}
+                placeholder="Describe the issue, urgency, and any access instructions..."
+                style={{ width: "100%", padding: "10px 13px", border: "1.5px solid rgba(0,0,0,0.1)", borderRadius: 10, fontFamily: SANS, fontSize: 13, color: TX, outline: "none", resize: "vertical", boxSizing: "border-box" }}
+              />
+            </div>
+            <button
+              onClick={sendJobRequest}
+              disabled={!jobTitle.trim() || sending}
+              style={{ width: "100%", padding: 13, background: jobTitle.trim() && !sending ? G : "rgba(0,0,0,0.15)", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: jobTitle.trim() && !sending ? "pointer" : "not-allowed", fontFamily: SANS }}
+            >
+              {sending ? "Sending…" : `Send to ${contactModal.name} →`}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

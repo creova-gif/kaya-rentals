@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { toast } from "sonner";
+import { ApplicationAPI } from "../../services/backend.service";
 import {
   User,
   Briefcase,
@@ -137,25 +139,42 @@ export function TenantApplicationForm() {
     setSubmitting(true);
     setSubmitProgress(0);
 
-    // Simulate AI processing with progress
     const interval = setInterval(() => {
-      setSubmitProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 300);
+      setSubmitProgress(prev => Math.min(prev + 8, 85));
+    }, 200);
 
-    setTimeout(() => {
+    try {
+      await ApplicationAPI.create({
+        propertyId: property.id,
+        unitId: property.unitId,
+        monthlyIncome: parseFloat(formData.monthlyIncome) || 0,
+        employmentStatus: formData.employmentStatus,
+        employer: formData.employer,
+        jobTitle: formData.jobTitle,
+        yearsEmployed: parseFloat(formData.employmentDuration?.split("-")[0] ?? "0") || 0,
+        previousAddress: formData.previousAddress,
+        previousLandlord: formData.previousLandlord,
+        previousLandlordPhone: formData.previousLandlordPhone,
+        reasonForLeaving: formData.reasonForLeaving,
+        pets: formData.pets !== "no",
+        smoker: formData.smoker === "yes",
+        documents: {
+          governmentId: !!documents.governmentId,
+          payStub: !!documents.proofOfIncome,
+          creditReport: !!documents.creditReport,
+          employmentLetter: !!documents.employmentLetter,
+          references: !!documents.references,
+        },
+      } as any);
       clearInterval(interval);
       setSubmitProgress(100);
-      
-      setTimeout(() => {
-        navigate("/tenant/applications");
-      }, 1500);
-    }, 3500);
+      setTimeout(() => navigate("/tenant/applications"), 1500);
+    } catch {
+      clearInterval(interval);
+      setSubmitting(false);
+      setSubmitProgress(0);
+      toast.error("Failed to submit application. Please try again.");
+    }
   };
 
   const nextStep = () => {

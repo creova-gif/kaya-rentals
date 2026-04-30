@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   FileText, CheckCircle2, Download, Eye, Edit3,
   Calendar, DollarSign, MapPin, Shield, AlertCircle, Sparkles,
@@ -15,12 +16,15 @@ const SERIF = "'Instrument Serif', Georgia, serif";
 
 export function TenantLeaseSigning() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [currentSection, setCurrentSection] = useState(0);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [signature, setSignature] = useState("");
   const [initials, setInitials] = useState("");
   const [signing, setSigning] = useState(false);
   const [signed, setSigned] = useState(false);
+
+  const tenantFullName = user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "Tenant";
 
   const lease = {
     propertyTitle: "Modern Downtown 2BR Condo",
@@ -31,8 +35,8 @@ export function TenantLeaseSigning() {
     leaseEnd: "March 31, 2027",
     leaseTerm: "12 months",
     landlordName: "Premium Properties Inc.",
-    tenantName: "Sarah Kim",
-    generatedDate: "March 14, 2026",
+    tenantName: tenantFullName,
+    generatedDate: new Date().toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" }),
   };
 
   const leaseSections = [
@@ -110,14 +114,13 @@ export function TenantLeaseSigning() {
     },
   ];
 
-  const handleSign = () => {
+  const handleSign = async () => {
     if (!signature || !initials || !agreedToTerms) return;
     setSigning(true);
-    setTimeout(() => {
-      setSigning(false);
-      setSigned(true);
-      setTimeout(() => { navigate("/tenant/applications"); }, 2500);
-    }, 2000);
+    await new Promise(res => setTimeout(res, 1800));
+    setSigning(false);
+    setSigned(true);
+    setTimeout(() => navigate("/tenant/applications"), 2500);
   };
 
   if (signed) {

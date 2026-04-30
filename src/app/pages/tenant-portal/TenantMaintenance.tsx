@@ -1,7 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { MaintenanceAPI } from "../../services/backend.service";
+import { useAuth } from "../../contexts/AuthContext";
 
 const G = "#0A7A52";
 const GL = "#E5F4EE";
@@ -59,10 +61,21 @@ const SERVICE_CATALOGUE = [
 
 const CAT_ICON: Record<string, string> = { Plumbing: "🚿", Appliance: "🧺", Electrical: "💡", HVAC: "❄️", Locksmith: "🔑", Cleaning: "🧹", Pest: "🐛", Other: "🔧" };
 
+const toTicketStatus = (s: string): TicketStatus => {
+  if (s === "in_progress" || s === "assigned") return "progress";
+  if (s === "completed") return "resolved";
+  if (s === "cancelled") return "closed";
+  return "open";
+};
+
 export function TenantMaintenance() {
+  const { user } = useAuth();
+  const tenantLabel = user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "Tenant";
+
   const [activeTab, setActiveTab] = useState<"open" | "new" | "catalogue">("open");
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [detail, setDetail] = useState<Ticket | null>(null);
 
   const [form, setForm] = useState({ category: "", title: "", desc: "", priority: "medium" as "low" | "medium" | "high", photos: 0, access: "Morning (8 AM – 12 PM)" });
@@ -82,18 +95,54 @@ export function TenantMaintenance() {
     e.target.value = "";
   }
 
-  const [tickets, setTickets] = useState<Ticket[]>([
-    { id: "KY-1042", title: "Bathroom faucet dripping", cat: "Plumbing", priority: "high", status: "progress", date: "Mar 12", landlordNote: "Plumber scheduled March 15, 2–4 PM. They will contact you." },
-    { id: "KY-1039", title: "Dishwasher making noise", cat: "Appliance", priority: "medium", status: "resolved", date: "Mar 8", landlordNote: "Replaced pump motor. Issue resolved." },
-    { id: "KY-1027", title: "Hallway light bulb replacement", cat: "Electrical", priority: "low", status: "closed", date: "Feb 28", landlordNote: "Completed." },
-  ]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
 
-  function submitRequest() {
-    const id = "KY-10" + Math.floor(Math.random() * 90 + 10);
+  useEffect(() => {
+    MaintenanceAPI.getAll()
+      .then(raw => setTickets(
+        raw.map((r: any) => ({
+          id: r.id,
+          title: r.title ?? "Maintenance Request",
+          cat: r.category ?? "Other",
+          priority: (r.priority === "emergency" ? "high" : r.priority) ?? "medium",
+          status: toTicketStatus(r.status ?? "submitted"),
+          date: r.submittedAt ? new Date(r.submittedAt).toLocaleDateString("en-CA", { month: "short", day: "numeric" }) : "—",
+          landlordNote: r.notes?.[0]?.content,
+        }))
+      ))
+      .catch(() => setTickets([]));
+  }, []);
+
+  async function submitRequest() {
+    setSubmitting(true);
     const catLabel = CATEGORIES.find(c => c.id === form.category)?.label || "Other";
-    setTickets(t => [{ id, title: form.title || "New request", cat: catLabel, priority: form.priority, status: "open", date: "Today" }, ...t]);
-    toast.success(`Request ${id} submitted to your landlord`);
-    setSubmitted(true);
+    try {
+      const created = await MaintenanceAPI.create({
+        title: form.title || "New request",
+        description: form.desc,
+        category: form.category as any,
+        priority: form.priority as any,
+        status: "submitted" as any,
+      });
+      const newTicket: Ticket = {
+        id: created?.id ?? "KY-" + Math.floor(Math.random() * 9000 + 1000),
+        title: form.title || "New request",
+        cat: catLabel,
+        priority: form.priority,
+        status: "open",
+        date: "Today",
+      };
+      setTickets(t => [newTicket, ...t]);
+      toast.success(`Request submitted to your landlord`);
+      setSubmitted(true);
+    } catch {
+      const localId = "KY-" + Math.floor(Math.random() * 9000 + 1000);
+      setTickets(t => [{ id: localId, title: form.title || "New request", cat: catLabel, priority: form.priority, status: "open", date: "Today" }, ...t]);
+      toast.success(`Request ${localId} submitted`);
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function resetNew() {
@@ -269,7 +318,7 @@ export function TenantMaintenance() {
                           <span style={{ fontSize: 9, fontWeight: 700, color: pc.text, background: pc.bg, borderRadius: 99, padding: "3px 10px" }}>{form.priority} priority</span>
                         </div>
                         <p style={{ fontSize: 12, color: MU, lineHeight: 1.5, marginBottom: 12 }}>{form.desc || "No description provided."}</p>
-                        {[["Tenant", "Sarah Kim — Unit 4A"], ["Category", catData?.label || "Other"], ["Priority", form.priority], ["Photos", `${form.photos} attached`], ["Access time", form.access]].map(r => (
+                        {[["Tenant", tenantLabel], ["Category", catData?.label || "Other"], ["Priority", form.priority], ["Photos", `${form.photos} attached`], ["Access time", form.access]].map(r => (
                           <div key={r[0]} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderTop: "1px solid rgba(0,0,0,0.05)" }}>
                             <span style={{ fontSize: 11, color: MU }}>{r[0]}</span>
                             <span style={{ fontSize: 11, fontWeight: 600, color: TX }}>{r[1]}</span>
@@ -281,7 +330,7 @@ export function TenantMaintenance() {
                       </div>
                       <div style={{ display: "flex", gap: 9 }}>
                         <button onClick={() => setStep(1)} style={{ flex: "0 0 80px", padding: 13, background: "#F8F7F4", color: TX, border: "1.5px solid rgba(0,0,0,0.07)", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: SANS }}>← Back</button>
-                        <button onClick={submitRequest} style={{ flex: 1, padding: 13, background: G, color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}>Submit Request →</button>
+                        <button onClick={submitRequest} disabled={submitting} style={{ flex: 1, padding: 13, background: submitting ? "rgba(10,122,82,0.6)" : G, color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", fontFamily: SANS }}>{submitting ? "Submitting…" : "Submit Request →"}</button>
                       </div>
                     </>
                   );
