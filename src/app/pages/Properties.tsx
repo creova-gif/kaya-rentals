@@ -1,16 +1,25 @@
-import { Building2, Home, Users, DollarSign, Plus, MapPin, Bed, Bath, Edit, Trash2, Eye, X, Save } from "lucide-react";
-import { useState } from "react";
+import { Building2, Home, Users, DollarSign, Plus, MapPin, Bed, Bath, Edit, Trash2, Eye, X, Save, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
+import { PropertyAPI, UnitAPI } from "../services/backend.service";
+import { toast } from "sonner";
+import type { Property, Unit } from "../types/database.types";
+
+type LocalUnit = Unit & { tenant?: string | null };
+type LocalProperty = Property & { units: LocalUnit[] };
 
 export function Properties() {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showAddProperty, setShowAddProperty] = useState(false);
-  const [showAddUnit, setShowAddUnit] = useState<number | null>(null);
+  const [showAddUnit, setShowAddUnit] = useState<string | null>(null);
   const [newProperty, setNewProperty] = useState({
     address: "",
     city: "",
-    province: "ON",
-    type: "Condo",
+    province: "Ontario",
+    postalCode: "",
+    type: "apartment" as const,
   });
   const [newUnit, setNewUnit] = useState({
     number: "",
@@ -19,93 +28,93 @@ export function Properties() {
     rent: 0,
   });
 
-  const [properties, setProperties] = useState([
-    {
-      id: 1,
-      address: "123 King Street",
-      city: "Toronto",
-      province: "ON",
-      type: "Condo",
-      units: [
-        { number: "4A", bedrooms: 2, bathrooms: 1, rent: 2300, status: "occupied", tenant: "John Doe" },
-        { number: "5A", bedrooms: 2, bathrooms: 1, rent: 2400, status: "available", tenant: null },
-      ]
-    },
-    {
-      id: 2,
-      address: "456 Queen Street West",
-      city: "Toronto",
-      province: "ON",
-      type: "Apartment Building",
-      units: [
-        { number: "1C", bedrooms: 3, bathrooms: 2, rent: 2800, status: "occupied", tenant: "Alice Smith" },
-        { number: "2B", bedrooms: 1, bathrooms: 1, rent: 1950, status: "available", tenant: null },
-        { number: "3A", bedrooms: 2, bathrooms: 1, rent: 2200, status: "occupied", tenant: "Bob Johnson" },
-      ]
-    },
-    {
-      id: 3,
-      address: "789 Bloor Street",
-      city: "Toronto",
-      province: "ON",
-      type: "Townhouse",
-      units: [
-        { number: "Unit 1", bedrooms: 3, bathrooms: 2.5, rent: 3200, status: "occupied", tenant: "Emma Wilson" },
-        { number: "Unit 2", bedrooms: 3, bathrooms: 2.5, rent: 3200, status: "occupied", tenant: "David Lee" },
-      ]
-    },
-    {
-      id: 4,
-      address: "200 Bay Street",
-      city: "Toronto",
-      province: "ON",
-      type: "Commercial — Mixed-Use",
-      units: [
-        { number: "Suite 101", bedrooms: 0, bathrooms: 0, rent: 5600, status: "occupied", tenant: "Maple Leaf Café Inc." },
-        { number: "Suite 305", bedrooms: 0, bathrooms: 0, rent: 9200, status: "occupied", tenant: "TechNest Solutions Ltd." },
-        { number: "Suite 410", bedrooms: 0, bathrooms: 0, rent: 5600, status: "available", tenant: null },
-      ]
-    },
-  ]);
+  const [properties, setProperties] = useState<LocalProperty[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const props = await PropertyAPI.getAll();
+        const withUnits: LocalProperty[] = await Promise.all(
+          props.map(async (p) => {
+            const units = await UnitAPI.getAll(p.id).catch(() => []);
+            return { ...p, units };
+          })
+        );
+        setProperties(withUnits);
+      } catch {
+        toast.error("Failed to load properties");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
 
   const totalUnits = properties.reduce((sum, prop) => sum + prop.units.length, 0);
-  const occupiedUnits = properties.reduce((sum, prop) => 
+  const occupiedUnits = properties.reduce((sum, prop) =>
     sum + prop.units.filter(u => u.status === "occupied").length, 0
   );
-  const monthlyRevenue = properties.reduce((sum, prop) => 
-    sum + prop.units.filter(u => u.status === "occupied").reduce((s, u) => s + u.rent, 0), 0
+  const monthlyRevenue = properties.reduce((sum, prop) =>
+    sum + prop.units.filter(u => u.status === "occupied").reduce((s, u) => s + (u.rentPrice ?? 0), 0), 0
   );
 
-  const handleAddProperty = () => {
+  const handleAddProperty = async () => {
     if (!newProperty.address || !newProperty.city) return;
-    
-    const property = {
-      id: properties.length + 1,
-      ...newProperty,
-      units: [],
-    };
-    
-    setProperties([...properties, property]);
-    setNewProperty({ address: "", city: "", province: "ON", type: "Condo" });
-    setShowAddProperty(false);
+    setSaving(true);
+    try {
+      const created = await PropertyAPI.create({
+        name: newProperty.address,
+        address: newProperty.address,
+        city: newProperty.city,
+        province: newProperty.province,
+        postalCode: newProperty.postalCode,
+        country: "Canada",
+        propertyType: newProperty.type as any,
+        totalUnits: 0,
+      });
+      setProperties(prev => [...prev, { ...created, units: [] }]);
+      setNewProperty({ address: "", city: "", province: "Ontario", postalCode: "", type: "apartment" });
+      setShowAddProperty(false);
+      toast.success("Property added");
+    } catch {
+      toast.error("Failed to add property");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleAddUnit = (propertyId: number) => {
+  const handleAddUnit = async (propertyId: string) => {
     if (!newUnit.number || !newUnit.rent) return;
-    
-    setProperties(properties.map(prop => {
-      if (prop.id === propertyId) {
-        return {
-          ...prop,
-          units: [...prop.units, { ...newUnit, status: "available", tenant: null }]
-        };
-      }
-      return prop;
-    }));
-    
-    setNewUnit({ number: "", bedrooms: 1, bathrooms: 1, rent: 0 });
-    setShowAddUnit(null);
+    setSaving(true);
+    try {
+      const created = await UnitAPI.create(propertyId, {
+        unitNumber: newUnit.number,
+        bedrooms: newUnit.bedrooms,
+        bathrooms: newUnit.bathrooms,
+        rentPrice: newUnit.rent,
+        status: "available",
+      });
+      setProperties(prev => prev.map(p =>
+        p.id === propertyId ? { ...p, units: [...p.units, created] } : p
+      ));
+      setNewUnit({ number: "", bedrooms: 1, bathrooms: 1, rent: 0 });
+      setShowAddUnit(null);
+      toast.success("Unit added");
+    } catch {
+      toast.error("Failed to add unit");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <Loader2 size={32} color="#0A7A52" style={{ animation: "spin 1s linear infinite" }} />
+        <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F7F4]">
@@ -119,7 +128,7 @@ export function Properties() {
             <p className="mt-2 text-[14px] text-[#767570]">Manage your rental properties and units</p>
           </div>
           <button 
-            onClick={() => navigate("/properties/add")}
+            onClick={() => navigate("/app/properties/add")}
             className="flex items-center gap-2 px-5 py-3 bg-[#0A7A52] hover:bg-[#085D3D] text-white rounded-xl font-medium transition-all shadow-lg"
             style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}
           >
@@ -194,7 +203,7 @@ export function Properties() {
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="font-semibold text-[#0E0F0C] text-[16px]">Units</h4>
                   <button
-                    onClick={() => setShowAddUnit(property.id)}
+                    onClick={() => setShowAddUnit(property.id as any)}
                     className="flex items-center gap-1 px-4 py-2 text-[13px] bg-[#E5F4EE] hover:bg-[#0A7A52] text-[#0A7A52] hover:text-white rounded-lg font-semibold transition-all"
                   >
                     <Plus className="size-4" />
@@ -213,7 +222,7 @@ export function Properties() {
                       }`}
                     >
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-semibold text-[#0E0F0C] text-[16px]">{unit.number}</h4>
+                        <h4 className="font-semibold text-[#0E0F0C] text-[16px]">{(unit as any).unitNumber ?? (unit as any).number}</h4>
                         <span className={`px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wide ${
                           unit.status === "occupied"
                             ? "bg-[#0A7A52] text-white"
@@ -245,7 +254,7 @@ export function Properties() {
 
                       <div className="flex items-center justify-between">
                         <span className="text-[12px] text-[#767570] font-medium">Monthly Rent</span>
-                        <span className="font-semibold text-[#0E0F0C] text-[16px]">${unit.rent.toLocaleString()}</span>
+                        <span className="font-semibold text-[#0E0F0C] text-[16px]">${((unit as any).rentPrice ?? (unit as any).rent ?? 0).toLocaleString()}</span>
                       </div>
 
                       {unit.tenant && (
@@ -351,14 +360,14 @@ export function Properties() {
               </button>
               <button
                 onClick={handleAddProperty}
-                disabled={!newProperty.address || !newProperty.city}
+                disabled={saving || !newProperty.address || !newProperty.city}
                 className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
-                  newProperty.address && newProperty.city
+                  newProperty.address && newProperty.city && !saving
                     ? "bg-[#0A7A52] hover:bg-[#085D3D] text-white"
                     : "bg-[#F8F7F4] text-[#767570] cursor-not-allowed"
                 }`}
               >
-                Add Property
+                {saving ? "Saving…" : "Add Property"}
               </button>
             </div>
           </div>
@@ -454,15 +463,15 @@ export function Properties() {
                 Cancel
               </button>
               <button
-                onClick={() => handleAddUnit(showAddUnit)}
-                disabled={!newUnit.number || !newUnit.rent}
+                onClick={() => showAddUnit && handleAddUnit(showAddUnit)}
+                disabled={saving || !newUnit.number || !newUnit.rent}
                 className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
-                  newUnit.number && newUnit.rent
+                  newUnit.number && newUnit.rent && !saving
                     ? "bg-[#0A7A52] hover:bg-[#085D3D] text-white"
                     : "bg-[#F8F7F4] text-[#767570] cursor-not-allowed"
                 }`}
               >
-                Add Unit
+                {saving ? "Saving…" : "Add Unit"}
               </button>
             </div>
           </div>

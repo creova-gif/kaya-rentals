@@ -1,85 +1,31 @@
-import { Users, MapPin, Phone, Mail, Calendar, DollarSign, AlertTriangle, CheckCircle2, Search, Filter, Award, TrendingUp, Clock, Send, Shield, Star } from "lucide-react";
-import { useState } from "react";
+import { Users, MapPin, Phone, Mail, Calendar, DollarSign, AlertTriangle, CheckCircle2, Search, Filter, Award, TrendingUp, Clock, Send, Shield, Star, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { motion } from "motion/react";
+import { TenantAPI } from "../services/backend.service";
 
 export function Tenants() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  
-  const tenants = [
-    {
-      id: 1,
-      name: "John Doe",
-      email: "john.doe@email.com",
-      phone: "(416) 555-0123",
-      unit: "4A",
-      address: "123 King Street",
-      rent: 2300,
-      leaseStart: "Jan 1, 2025",
-      leaseEnd: "Dec 31, 2025",
-      paymentStatus: "current",
-      creditScore: 720,
-      risk: "low"
-    },
-    {
-      id: 2,
-      name: "Alice Smith",
-      email: "alice.smith@email.com",
-      phone: "(416) 555-0124",
-      unit: "1C",
-      address: "456 Queen Street West",
-      rent: 2800,
-      leaseStart: "Mar 1, 2024",
-      leaseEnd: "Feb 28, 2027",
-      paymentStatus: "current",
-      creditScore: 755,
-      risk: "low"
-    },
-    {
-      id: 3,
-      name: "Bob Johnson",
-      email: "bob.johnson@email.com",
-      phone: "(416) 555-0125",
-      unit: "3A",
-      address: "456 Queen Street West",
-      rent: 2200,
-      leaseStart: "Jun 1, 2025",
-      leaseEnd: "May 31, 2026",
-      paymentStatus: "late",
-      creditScore: 680,
-      risk: "medium"
-    },
-    {
-      id: 4,
-      name: "Emma Wilson",
-      email: "emma.wilson@email.com",
-      phone: "(416) 555-0126",
-      unit: "Unit 1",
-      address: "789 Bloor Street",
-      rent: 3200,
-      leaseStart: "Sep 1, 2024",
-      leaseEnd: "Aug 31, 2026",
-      paymentStatus: "current",
-      creditScore: 790,
-      risk: "low"
-    },
-    {
-      id: 5,
-      name: "David Lee",
-      email: "david.lee@email.com",
-      phone: "(416) 555-0127",
-      unit: "Unit 2",
-      address: "789 Bloor Street",
-      rent: 3200,
-      leaseStart: "Oct 1, 2025",
-      leaseEnd: "Sep 30, 2026",
-      paymentStatus: "current",
-      creditScore: 735,
-      risk: "low"
-    },
-  ];
+  const [tenants, setTenants] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    TenantAPI.getAll()
+      .then(setTenants)
+      .catch(() => setTenants([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <Loader2 size={32} color="#0A7A52" style={{ animation: "spin 1s linear infinite" }} />
+        <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+      </div>
+    );
+  }
 
   const filteredTenants = tenants.filter(tenant => {
     if (filterStatus === "all") {
@@ -136,7 +82,7 @@ export function Tenants() {
               {tenants.filter(t => t.paymentStatus === "current").length}
             </h2>
             <p className="text-[13px] text-[#767570]">
-              {((tenants.filter(t => t.paymentStatus === "current").length / tenants.length) * 100).toFixed(0)}% success rate
+              {((tenants.filter(t => t.paymentStatus === "current").length / (tenants.length || 1)) * 100).toFixed(0)}% success rate
             </p>
           </motion.div>
 
@@ -164,7 +110,7 @@ export function Tenants() {
               Avg Trust Score
             </p>
             <h2 className="text-[36px] font-normal text-[#0E0F0C] leading-none" style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-              {Math.round(tenants.reduce((sum, t) => sum + t.creditScore, 0) / tenants.length / 10)}
+              {tenants.length > 0 ? Math.round(tenants.reduce((sum, t) => sum + (t.creditScore ?? 0), 0) / tenants.length / 10) : "—"}
             </h2>
           </motion.div>
         </div>

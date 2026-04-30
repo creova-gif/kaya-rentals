@@ -229,6 +229,21 @@ export const PaymentAPI = {
 };
 
 // ============================================================================
+// TENANT API
+// ============================================================================
+
+export const TenantAPI = {
+  async getAll(): Promise<any[]> {
+    const result = await apiFetch('/tenants');
+    return result.tenants || [];
+  },
+  async getById(tenantId: string): Promise<any> {
+    const result = await apiFetch(`/tenants/${tenantId}`);
+    return result.tenant;
+  },
+};
+
+// ============================================================================
 // MAINTENANCE API
 // ============================================================================
 

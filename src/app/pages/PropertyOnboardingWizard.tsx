@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
+import { PropertyAPI, UnitAPI } from "../services/backend.service";
+import { toast } from "sonner";
 import {
   MapPin,
   Building2,
@@ -133,10 +135,53 @@ export function PropertyOnboardingWizard() {
     }
   };
 
-  const handleComplete = () => {
-    // In production, this would save to backend
-    console.log("Property onboarding complete:", formData);
-    navigate("/properties");
+  const handleComplete = async () => {
+    try {
+      const typeMap: Record<string, string> = {
+        "Single Family Home": "house",
+        "Condominium": "apartment",
+        "Apartment Building": "apartment",
+        "Townhouse": "house",
+        "Multi-Unit Residential": "apartment",
+        "Commercial": "retail",
+        "Mixed-Use": "mixed_use",
+      };
+      const property = await PropertyAPI.create({
+        name: formData.street,
+        address: formData.street,
+        city: formData.city,
+        province: formData.province,
+        postalCode: formData.postalCode,
+        country: formData.country,
+        propertyType: (typeMap[formData.propertyType] ?? "apartment") as any,
+        totalUnits: formData.units.length,
+        amenities: formData.amenities,
+      });
+      await Promise.all(
+        formData.units.map(u =>
+          UnitAPI.create(property.id, {
+            unitNumber: u.unitNumber,
+            bedrooms: parseInt(u.bedrooms) || 0,
+            bathrooms: parseFloat(u.bathrooms) || 1,
+            squareFootage: parseInt(u.squareFeet) || 0,
+            rentPrice: parseInt(u.rent) || 0,
+            deposit: Math.round((parseInt(u.rent) || 0)),
+            status: "available",
+            availabilityDate: u.availableDate ? new Date(u.availableDate) : undefined,
+            features: [
+              ...(u.furnished ? ["Furnished"] : []),
+              ...(u.parking ? ["Parking"] : []),
+              ...(u.petsAllowed ? ["Pets Allowed"] : []),
+            ],
+            utilitiesIncluded: formData.utilitiesIncluded,
+          })
+        )
+      );
+      toast.success("Property added successfully!");
+      navigate("/app/properties");
+    } catch {
+      toast.error("Failed to save property. Please try again.");
+    }
   };
 
   const canProceed = () => {
@@ -218,7 +263,7 @@ export function PropertyOnboardingWizard() {
             </div>
 
             <button
-              onClick={() => navigate("/properties")}
+              onClick={() => navigate("/app/properties")}
               className="px-4 py-2.5 border border-black/[0.08] text-[#0A0A0A] text-[14px] font-medium rounded-lg hover:bg-[#F5F5F5] transition-colors"
             >
               Cancel

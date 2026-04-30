@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Calendar, DollarSign, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { Calendar, DollarSign, AlertTriangle, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { PaymentAPI } from "../services/backend.service";
 
 interface Payment {
   id: string;
@@ -7,20 +9,46 @@ interface Payment {
   unit: string;
   amount: number;
   dueDate: string;
-  status: "paid" | "due-soon" | "overdue" | "upcoming";
+  status: "paid" | "due-soon" | "overdue" | "upcoming" | "completed" | "pending" | "late";
   paidDate?: string;
 }
 
+const normalizeStatus = (s: string): Payment["status"] => {
+  if (s === "completed") return "paid";
+  if (s === "late") return "overdue";
+  if (s === "pending") return "upcoming";
+  return s as Payment["status"];
+};
+
 export function PaymentCalendar() {
-  const payments: Payment[] = [
-    { id: "1", tenant: "Sarah Kim", unit: "4A", amount: 2300, dueDate: "2026-03-01", status: "paid", paidDate: "2026-03-01" },
-    { id: "2", tenant: "Michael Patel", unit: "2B", amount: 1950, dueDate: "2026-03-01", status: "paid", paidDate: "2026-02-28" },
-    { id: "3", tenant: "Emma Rodriguez", unit: "5A", amount: 2400, dueDate: "2026-03-01", status: "paid", paidDate: "2026-03-01" },
-    { id: "4", tenant: "David Chen", unit: "3C", amount: 2100, dueDate: "2026-03-15", status: "due-soon" },
-    { id: "5", tenant: "Lisa Park", unit: "1B", amount: 2250, dueDate: "2026-03-20", status: "overdue" },
-    { id: "6", tenant: "John Smith", unit: "2A", amount: 2000, dueDate: "2026-04-01", status: "upcoming" },
-    { id: "7", tenant: "Anna Wilson", unit: "6B", amount: 2350, dueDate: "2026-04-01", status: "upcoming" },
-  ];
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    PaymentAPI.getAll()
+      .then(raw => setPayments(
+        raw.map((p: any) => ({
+          id: p.id,
+          tenant: p.tenantName ?? p.tenantId ?? "Tenant",
+          unit: p.unitId ?? p.unit ?? "—",
+          amount: p.amount ?? 0,
+          dueDate: p.dueDate ? new Date(p.dueDate).toISOString().split("T")[0] : "",
+          status: normalizeStatus(p.status ?? "upcoming"),
+          paidDate: p.paidDate ? new Date(p.paidDate).toISOString().split("T")[0] : undefined,
+        }))
+      ))
+      .catch(() => setPayments([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 64 }}>
+        <Loader2 size={28} color="#0A7A52" style={{ animation: "spin 1s linear infinite" }} />
+        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
 
   const statusConfig = {
     paid: {

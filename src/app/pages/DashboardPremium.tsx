@@ -257,9 +257,17 @@ export function DashboardPremium() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
               <div>
                 <p style={{ fontSize: 11, color: MUTED, fontWeight: 600, letterSpacing: "0.7px", textTransform: "uppercase", marginBottom: 6 }}>Revenue trend</p>
-                <p style={{ fontFamily: "'Instrument Serif', serif", fontSize: 32, color: TEXT }}>$27,600 <span style={{ fontSize: 14, color: MUTED, fontFamily: "inherit" }}>/ Mar</span></p>
+                <p style={{ fontFamily: "'Instrument Serif', serif", fontSize: 32, color: TEXT }}>
+                  ${(revenueData[revenueData.length - 1]?.v ?? 0).toLocaleString()}{" "}
+                  <span style={{ fontSize: 14, color: MUTED, fontFamily: "inherit" }}>/ {revenueData[revenueData.length - 1]?.month ?? "—"}</span>
+                </p>
               </div>
-              <KayaBadge label="↑ 12% vs last month" />
+              {(() => {
+                const cur = revenueData[revenueData.length - 1]?.v ?? 0;
+                const prev = revenueData[revenueData.length - 2]?.v ?? 0;
+                const pct = prev > 0 ? Math.round(((cur - prev) / prev) * 100) : 0;
+                return <KayaBadge label={`${pct >= 0 ? '↑' : '↓'} ${Math.abs(pct)}% vs last month`} color={pct >= 0 ? "green" : "red"} />;
+              })()}
             </div>
             <ResponsiveContainer width="100%" height={180}>
               <AreaChart data={revenueData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
