@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { X, Sparkles, Moon, Sun, Copy, Check, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "/src/lib/supabase";
 
 /* ── Design tokens ── */
 const G = "#0A7A52";
@@ -81,11 +82,11 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 
 export function TenantProfile() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
 
   /* ── Derived user identity ── */
-  const authName = user?.name || user?.email?.split('@')[0] || 'Tenant';
+  const authName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Tenant';
   const authEmail = user?.email || '';
   const authInitials = authName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
   // Deterministic referral code from user id (first 8 chars uppercased)
@@ -173,7 +174,7 @@ export function TenantProfile() {
             >
               {avatarSrc
                 ? <img src={avatarSrc} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="avatar" />
-                : <span style={{ fontSize: 22, fontWeight: 700, color: "#fff" }}>SK</span>
+                : <span style={{ fontSize: 22, fontWeight: 700, color: "#fff" }}>{authInitials}</span>
               }
             </div>
             <div onClick={() => fileRef.current?.click()} style={{ position: "absolute", bottom: 0, right: 0, width: 22, height: 22, borderRadius: "50%", background: G, border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 11 }}>📷</div>
@@ -499,7 +500,12 @@ export function TenantProfile() {
                   )}
                   <button
                     disabled={!pwMatch || pwStrength < 2 || !pwCurrent}
-                    onClick={() => { closeModal(); toast.success("Password updated. OTP required at next login."); }}
+                    onClick={async () => {
+                      const { error } = await supabase.auth.updateUser({ password: pwNew });
+                      if (error) { toast.error("Failed to update password. Check your current password."); return; }
+                      closeModal();
+                      toast.success("Password updated. OTP required at next login.");
+                    }}
                     style={{ width: "100%", padding: 13, background: (pwMatch && pwStrength >= 2 && pwCurrent) ? G : "rgba(0,0,0,0.12)", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: (pwMatch && pwStrength >= 2 && pwCurrent) ? "pointer" : "not-allowed", fontFamily: SANS }}
                   >Update Password</button>
                 </>
@@ -595,7 +601,11 @@ export function TenantProfile() {
                     <Field label="Contact Name" value={emergencyName} onChange={setEmergencyName} placeholder="James Kim" T={T} SANS={SANS} />
                     <Field label="Contact Phone" type="tel" value={emergencyPhone} onChange={setEmergencyPhone} placeholder="+1 (416) 555-0199" T={T} SANS={SANS} />
                   </div>
-                  <button onClick={() => { closeModal(); toast.success("Profile saved successfully"); }} style={{ width: "100%", padding: 13, background: G, color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}>Save Changes</button>
+                  <button onClick={async () => {
+                    await supabase.auth.updateUser({ data: { full_name: profileName } });
+                    closeModal();
+                    toast.success("Profile saved successfully");
+                  }} style={{ width: "100%", padding: 13, background: G, color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}>Save Changes</button>
                 </>
               )}
 
@@ -774,7 +784,7 @@ export function TenantProfile() {
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <button onClick={closeModal} style={{ padding: 13, background: T.metaBg, color: T.tx, border: `1.5px solid ${T.cardBorder}`, borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: SANS }}>Cancel</button>
-                    <button onClick={() => { navigate("/login"); toast.success("Signed out securely"); }} style={{ padding: 13, background: "#C0392B", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}>Sign Out</button>
+                    <button onClick={async () => { await signOut(); navigate("/login"); }} style={{ padding: 13, background: "#C0392B", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: SANS }}>Sign Out</button>
                   </div>
                 </>
               )}

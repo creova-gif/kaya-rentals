@@ -1,5 +1,6 @@
-import { useState, type CSSProperties } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import { toast } from "sonner";
+import { PropertyAPI, UnitAPI } from "../services/backend.service";
 
 const G="#0A7A52",GL="#E5F4EE",BG="#F8F7F4",TX="#0E0F0C",MU="#767570";
 const BD="rgba(0,0,0,0.07)";
@@ -107,6 +108,58 @@ function ScoreMeter({ score }: { score: number }) {
 export function VacancyMarketing() {
   const [units, setUnits] = useState(initUnits);
   const [commUnits, setCommUnits] = useState(initCommercialUnits);
+
+  useEffect(() => {
+    PropertyAPI.getAll().then(async properties => {
+      const allUnits = await Promise.all(
+        properties.map(p => UnitAPI.getAll(p.id).then(us => us.map(u => ({ ...u, property: p }))))
+      );
+      const flat = allUnits.flat();
+      const vacant = flat.filter(u => u.status === 'available');
+      if (vacant.length === 0) return;
+
+      const COMMERCIAL_TYPES = ['retail', 'office', 'industrial'];
+      const res: typeof initUnits = [];
+      const com: typeof initCommercialUnits = [];
+
+      vacant.forEach(u => {
+        const isCommercial = COMMERCIAL_TYPES.includes(u.property.propertyType);
+        if (isCommercial) {
+          com.push({
+            unit: u.unitNumber,
+            addr: u.property.address,
+            sqft: u.squareFootage,
+            leaseType: "NNN",
+            useClass: u.property.propertyType.charAt(0).toUpperCase() + u.property.propertyType.slice(1),
+            aiPricePerSqft: Math.round(u.rentPrice * 12 / u.squareFootage),
+            yourPricePerSqft: Math.round(u.rentPrice * 12 / u.squareFootage),
+            copy: `${u.squareFootage.toLocaleString()} sqft ${u.property.propertyType} space at ${u.property.address}. Available now.`,
+            tags: (u.features ?? []).slice(0, 4),
+            score: 80,
+            published: false,
+            camEstimate: 0,
+          });
+        } else {
+          res.push({
+            unit: u.unitNumber,
+            addr: u.property.address,
+            beds: u.bedrooms,
+            baths: u.bathrooms,
+            sqft: u.squareFootage,
+            aiPrice: u.rentPrice,
+            yourPrice: u.rentPrice,
+            copy: `${u.bedrooms}-bedroom unit at ${u.property.address}. ${u.squareFootage} sqft. Available now.`,
+            tags: (u.features ?? []).slice(0, 4),
+            score: 80,
+            published: false,
+          });
+        }
+      });
+
+      if (res.length > 0) setUnits(res);
+      if (com.length > 0) setCommUnits(com);
+    }).catch(() => {});
+  }, []);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editCopy, setEditCopy] = useState("");
   const [editPrice, setEditPrice] = useState<number | null>(null);

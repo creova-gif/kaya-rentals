@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { Download, FileText, Calendar, TrendingUp, DollarSign, Home, Users, Wrench, Filter, ChevronDown, Printer, Mail, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Download, FileText, Calendar, TrendingUp, DollarSign, Home, Users, Wrench, Filter, ChevronDown, Printer, Mail, ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { AnalyticsAPI } from "../services/backend.service";
 
 interface Report {
   id: string;
@@ -15,6 +16,31 @@ interface Report {
 export function Reports() {
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [loadingFinancials, setLoadingFinancials] = useState(true);
+  const [financialSummary, setFinancialSummary] = useState({
+    totalRevenue: 0,
+    totalExpenses: 0,
+    netIncome: 0,
+    revenueChange: 0,
+    expenseChange: 0,
+    netIncomeChange: 0,
+  });
+
+  useEffect(() => {
+    AnalyticsAPI.getPortfolio()
+      .then(portfolio => {
+        setFinancialSummary({
+          totalRevenue: portfolio.overview.totalRevenueCollected,
+          totalExpenses: portfolio.overview.maintenanceCosts,
+          netIncome: portfolio.overview.netIncome,
+          revenueChange: 0,
+          expenseChange: 0,
+          netIncomeChange: 0,
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoadingFinancials(false));
+  }, []);
 
   const availableReports: Report[] = [
     {
@@ -103,16 +129,6 @@ export function Reports() {
       tenant:      { background: "#FDF2F8", color: "#BE185D",  border: "1px solid rgba(190,24,93,0.2)" },
     };
     return map[category] ?? { background: "#F8F7F4", color: "#767570", border: "1px solid rgba(0,0,0,0.1)" };
-  };
-
-  // Sample financial summary data
-  const financialSummary = {
-    totalRevenue: 124500,
-    totalExpenses: 48200,
-    netIncome: 76300,
-    revenueChange: 8.4,
-    expenseChange: -3.2,
-    netIncomeChange: 12.1,
   };
 
   return (
@@ -205,55 +221,42 @@ export function Reports() {
         {/* Financial Summary Cards */}
         {(selectedCategory === 'all' || selectedCategory === 'financial') && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] p-6">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-[#767570]">Total Revenue</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: financialSummary.revenueChange >= 0 ? "#0A7A52" : "#C0392B" }}>
-                  {financialSummary.revenueChange >= 0 ? (
-                    <ArrowUpRight className="size-3" />
-                  ) : (
-                    <ArrowDownRight className="size-3" />
-                  )}
-                  {Math.abs(financialSummary.revenueChange)}%
+            {loadingFinancials && (
+              <div className="col-span-3 flex items-center justify-center py-8">
+                <Loader2 className="size-6 animate-spin text-[#0A7A52]" />
+              </div>
+            )}
+            {!loadingFinancials && <>
+              <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] p-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-[#767570]">Total Revenue</span>
                 </div>
+                <div className="text-3xl font-bold text-[#0E0F0C] mb-1">
+                  ${financialSummary.totalRevenue.toLocaleString()}
+                </div>
+                <div className="text-xs text-[#767570]">collected to date</div>
               </div>
-              <div className="text-3xl font-bold text-[#0E0F0C] mb-1">
-                ${financialSummary.totalRevenue.toLocaleString()}
-              </div>
-              <div className="text-xs text-[#767570]">vs. last period</div>
-            </div>
 
-            <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] p-6">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-[#767570]">Total Expenses</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: financialSummary.expenseChange <= 0 ? "#0A7A52" : "#C0392B" }}>
-                  {financialSummary.expenseChange >= 0 ? (
-                    <ArrowUpRight className="size-3" />
-                  ) : (
-                    <ArrowDownRight className="size-3" />
-                  )}
-                  {Math.abs(financialSummary.expenseChange)}%
+              <div className="bg-white rounded-2xl border border-[rgba(0,0,0,0.08)] p-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-[#767570]">Total Expenses</span>
                 </div>
+                <div className="text-3xl font-bold text-[#0E0F0C] mb-1">
+                  ${financialSummary.totalExpenses.toLocaleString()}
+                </div>
+                <div className="text-xs text-[#767570]">maintenance costs</div>
               </div>
-              <div className="text-3xl font-bold text-[#0E0F0C] mb-1">
-                ${financialSummary.totalExpenses.toLocaleString()}
-              </div>
-              <div className="text-xs text-[#767570]">vs. last period</div>
-            </div>
 
-            <div className="bg-gradient-to-br from-[#0A7A52] to-[#085D3D] rounded-2xl border border-[#0A7A52]/20 p-6 text-white shadow-lg shadow-[#0A7A52]/20">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-white/80">Net Income</span>
-                <div className="flex items-center gap-1 text-xs font-semibold text-white">
-                  <ArrowUpRight className="size-3" />
-                  {financialSummary.netIncomeChange}%
+              <div className="bg-gradient-to-br from-[#0A7A52] to-[#085D3D] rounded-2xl border border-[#0A7A52]/20 p-6 text-white shadow-lg shadow-[#0A7A52]/20">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-white/80">Net Income</span>
                 </div>
+                <div className="text-3xl font-bold mb-1">
+                  ${financialSummary.netIncome.toLocaleString()}
+                </div>
+                <div className="text-xs text-white/70">portfolio net</div>
               </div>
-              <div className="text-3xl font-bold mb-1">
-                ${financialSummary.netIncome.toLocaleString()}
-              </div>
-              <div className="text-xs text-white/70">vs. last period</div>
-            </div>
+            </>}
           </div>
         )}
 
