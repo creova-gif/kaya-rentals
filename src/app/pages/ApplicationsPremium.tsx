@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router";
-import { Search, CheckCircle2, AlertTriangle, XCircle, ChevronRight, Brain, Building2, Briefcase, Users, Star, Clock } from "lucide-react";
+import { Search, CheckCircle2, AlertTriangle, XCircle, ChevronRight, Brain, Building2, Briefcase, Users, Star, Clock, Loader2 } from "lucide-react";
 import { AIContextualHelper } from "../components/AIContextualHelper";
 import { toast } from "sonner";
+import { ApplicationAPI } from "../services/backend.service";
 
 const G = "#0A7A52";
 const GL = "#E5F4EE";
@@ -27,13 +28,6 @@ interface Application {
   appliedDate: string;
 }
 
-const applications: Application[] = [
-  { id: "1", name: "Sarah Kim", unit: "Unit 4A — 2 Bedroom", rent: 2300, aiScore: 92, riskLevel: "low", recommendation: "approve", creditScore: 745, income: 8500, rentToIncomeRatio: 27, employmentYears: 4.5, appliedDate: "Mar 14" },
-  { id: "2", name: "Michael Patel", unit: "Unit 2B — 1 Bedroom", rent: 1950, aiScore: 87, riskLevel: "low", recommendation: "approve", creditScore: 712, income: 6800, rentToIncomeRatio: 29, employmentYears: 3.2, appliedDate: "Mar 15" },
-  { id: "3", name: "Jason Lee", unit: "Unit 1C — 3 Bedroom", rent: 2800, aiScore: 68, riskLevel: "medium", recommendation: "review", creditScore: 658, income: 7200, rentToIncomeRatio: 39, employmentYears: 1.8, appliedDate: "Mar 13" },
-  { id: "4", name: "Emma Chen", unit: "Unit 3B — 1 Bedroom", rent: 1850, aiScore: 55, riskLevel: "high", recommendation: "reject", creditScore: 590, income: 4200, rentToIncomeRatio: 44, employmentYears: 0.8, appliedDate: "Mar 12" },
-  { id: "5", name: "David Martinez", unit: "Unit 5A — 2 Bedroom", rent: 2200, aiScore: 89, riskLevel: "low", recommendation: "approve", creditScore: 728, income: 8200, rentToIncomeRatio: 27, employmentYears: 5.2, appliedDate: "Mar 15" },
-];
 
 interface BusinessApplication {
   id: string;
@@ -110,11 +104,46 @@ const RISK_BORDER: Record<string, string> = {
   high: "#C0392B",
 };
 
+function toRiskLevel(score: number): "low" | "medium" | "high" {
+  if (score >= 80) return "low";
+  if (score >= 60) return "medium";
+  return "high";
+}
+
 export function ApplicationsPremium() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [tenantType, setTenantType] = useState<"residential" | "business">("residential");
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loadingApps, setLoadingApps] = useState(true);
+
+  useEffect(() => {
+    ApplicationAPI.getAll('landlord')
+      .then(data => {
+        const mapped: Application[] = data.map((a: any) => ({
+          id: a.id,
+          name: a.employer || a.employmentStatus || 'Applicant',
+          unit: a.unitId ? `Unit ${a.unitId.slice(0, 8)}` : 'TBD',
+          rent: a.monthlyIncome ? Math.round(a.monthlyIncome * 0.3) : 0,
+          aiScore: a.aiRiskScore ?? 0,
+          riskLevel: toRiskLevel(a.aiRiskScore ?? 0),
+          recommendation: (a.aiRecommendation ?? 'review') as Application['recommendation'],
+          creditScore: 0,
+          income: a.monthlyIncome ?? 0,
+          rentToIncomeRatio: a.monthlyIncome
+            ? Math.round((a.monthlyIncome * 0.3 / a.monthlyIncome) * 100)
+            : 0,
+          employmentYears: a.yearsEmployed ?? 0,
+          appliedDate: a.createdAt
+            ? new Date(a.createdAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
+            : '—',
+        }));
+        setApplications(mapped);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingApps(false));
+  }, []);
 
   const filtered = applications.filter(a =>
     (filter === "all" || a.riskLevel === filter) &&
@@ -275,7 +304,13 @@ export function ApplicationsPremium() {
         </div>
 
         {/* ── Residential Application Cards ── */}
-        {tenantType === "residential" && (
+        {tenantType === "residential" && loadingApps && (
+          <div style={{ display: "flex", justifyContent: "center", padding: "48px 0" }}>
+            <Loader2 size={28} color={G} style={{ animation: "spin 1s linear infinite" }} />
+            <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+          </div>
+        )}
+        {tenantType === "residential" && !loadingApps && (
           <>
             <AnimatePresence>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

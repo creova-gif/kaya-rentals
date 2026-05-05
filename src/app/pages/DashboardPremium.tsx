@@ -119,7 +119,7 @@ export function DashboardPremium() {
   const overduePayments = payments.filter(p => p.status === 'overdue' || p.status === 'late');
   const paidPayments = payments.filter(p => p.status === 'completed');
 
-  const firstName = user?.name?.split(' ')[0] ?? 'there';
+  const firstName = user?.user_metadata?.full_name?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'there';
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const todayLabel = new Date().toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -158,9 +158,9 @@ export function DashboardPremium() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: G }} />
-          <span style={{ fontSize: 13, color: MUTED }}>{user?.name ?? '—'}</span>
+          <span style={{ fontSize: 13, color: MUTED }}>{user?.user_metadata?.full_name ?? user?.email ?? '—'}</span>
           <div style={{ width: 32, height: 32, borderRadius: "50%", background: GL, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: G }}>
-            {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '?'}
+            {user?.user_metadata?.full_name ? user.user_metadata.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : '?'}
           </div>
         </div>
       </div>
