@@ -51,8 +51,8 @@ Based on what's actually implemented in the dashboard and API layer:
 ### Installation
 
 ```bash
-git clone https://github.com/creova-gif/KayaYourpropertyai.git
-cd KayaYourpropertyai
+git clone https://github.com/creova-gif/kaya-rentals.git
+cd kaya-rentals
 npm install
 ```
 
