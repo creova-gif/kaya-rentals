@@ -7,6 +7,8 @@
 
 > ⚠️ **A note on status before anything else:** this repo currently contains two internal docs with conflicting status claims — `DOCUMENTATION_INDEX.md` says "100% COMPLETE & PRODUCTION-READY," while `EXECUTIVE_SUMMARY.md` (dated 3 days later) lists unresolved critical security gaps and calls the platform "Beta / Pre-Launch." This README uses the more conservative status until that's reconciled — **recommend resolving which is actually true before this goes in front of anyone external.**
 
+![Kaya landing page](docs/screenshots/dashboard.png)
+
 ---
 
 ## What this is
