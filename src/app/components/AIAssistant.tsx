@@ -1,6 +1,6 @@
 import { X, Send, Sparkles, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
+import { postAiRoute } from "../services/ai-client";
 
 interface AIAssistantProps {
   isOpen: boolean;
@@ -45,25 +45,12 @@ export function AIAssistant({ isOpen, onClose }: AIAssistantProps) {
         content: msg.content
       }));
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/chat`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message: input,
-            context: "Canadian landlord platform - helping with tenant law and property management",
-            pageContext: "AI Chat Sidebar",
-            userId: 'demo-user',
-            conversationHistory: conversationHistory.slice(0, -1) // Exclude the message we just sent
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('chat', {
+        message: input,
+        context: "Canadian landlord platform - helping with tenant law and property management",
+        pageContext: "AI Chat Sidebar",
+        conversationHistory: conversationHistory.slice(0, -1) // Exclude the message we just sent
+      });
       
       if (data.success) {
         setMessages([...newMessages, {
@@ -73,7 +60,7 @@ export function AIAssistant({ isOpen, onClose }: AIAssistantProps) {
       } else {
         setMessages([...newMessages, {
           role: "assistant",
-          content: "I apologize, but I encountered an error. Please try again."
+          content: data.error || "I apologize, but I encountered an error. Please try again."
         }]);
       }
     } catch (error) {

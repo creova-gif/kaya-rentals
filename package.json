@@ -6,6 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "test": "node --test tests/security/ai-routes.test.mjs",
     "test:security:api": "node tests/security/api.security.mjs",
     "test:security:ui": "playwright test tests/security/ui.security.spec.ts",
     "test:security": "node tests/security/api.security.mjs && playwright test tests/security/ui.security.spec.ts"

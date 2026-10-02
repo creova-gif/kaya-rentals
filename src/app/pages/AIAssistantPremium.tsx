@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Send, Sparkles, TrendingUp, FileText, Building2, Loader2 } from "lucide-react";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
+import { postAiRoute } from "../services/ai-client";
 
 export function AIAssistantPremium() {
   const [message, setMessage] = useState("");
@@ -36,23 +36,11 @@ export function AIAssistantPremium() {
         content: msg.content
       }));
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/chat`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message: userMessage.content,
-            context: "Canadian landlord property management platform - assisting with tenant management, legal compliance, and property operations",
-            conversationHistory: conversationHistory.slice(0, -1)
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('chat', {
+        message: userMessage.content,
+        context: "Canadian landlord property management platform - assisting with tenant management, legal compliance, and property operations",
+        conversationHistory: conversationHistory.slice(0, -1)
+      });
 
       if (data.success) {
         const aiResponse = {
@@ -63,7 +51,7 @@ export function AIAssistantPremium() {
       } else {
         const errorResponse = {
           role: "assistant" as const,
-          content: "I apologize, but I encountered an error. Please try again.",
+          content: data.error || "I apologize, but I encountered an error. Please try again.",
         };
         setMessages([...newMessages, errorResponse]);
       }

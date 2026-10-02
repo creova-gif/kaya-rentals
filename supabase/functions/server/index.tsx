@@ -4,6 +4,7 @@ import { secureHeaders } from "npm:hono/secure-headers";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
+import { AI_ROUTE_NAMES, authenticateCaller, dispatchAiRequest } from "./ai_routes.mjs";
 
 const app = new Hono();
 
@@ -75,24 +76,27 @@ app.use('/make-server-2071350e/auth/*', (c, next) => rateLimiter(c, next, 10, 60
 // MIDDLEWARE - Authentication
 // ============================================================================
 
-async function requireAuth(c: any, next: any) {
-  const accessToken = c.req.header('Authorization')?.split(' ')[1];
-  
-  if (!accessToken || accessToken === Deno.env.get('SUPABASE_ANON_KEY')) {
-    return c.json({ error: 'Unauthorized - Please log in' }, { status: 401 });
-  }
-
-  const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-  
-  if (error || !user) {
+async function verifyAccessToken(accessToken: string) {
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data?.user) {
     console.log('Auth error during user verification:', error);
-    return c.json({ error: 'Unauthorized - Invalid or expired token' }, { status: 401 });
+  }
+  return { user: data?.user ?? null, error };
+}
+
+async function requireAuth(c: any, next: any) {
+  const result = await authenticateCaller({
+    authorizationHeader: c.req.header('Authorization'),
+    anonKey: Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    getUser: verifyAccessToken,
+  });
+
+  if (!result.ok) {
+    return c.json({ error: result.error }, { status: result.status });
   }
 
-  // Attach user to context
-  c.set('user', user);
-  c.set('userId', user.id);
-  
+  c.set('user', result.user);
+  c.set('userId', result.user.id);
   await next();
 }
 
@@ -1761,510 +1765,49 @@ app.delete("/make-server-2071350e/listings/:id", async (c) => {
 
 // ============================================================================
 // CLAUDE AI ROUTES
+// Auth and the per-user quota are enforced in ai_routes.mjs before any model
+// call. Registering from AI_ROUTE_NAMES keeps a new /ai route from skipping
+// that gate. The Anthropic client is constructed only when model.create runs.
 // ============================================================================
 
-// AI Rent Estimate
-app.post("/make-server-2071350e/ai/rent-estimate", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { address, city, province, bedrooms, bathrooms, sqft, amenities } = body;
+let anthropicClient: any = null;
 
+async function aiModel() {
+  if (!anthropicClient) {
     const Anthropic = (await import('npm:@anthropic-ai/sdk@0.32')).default;
-    const anthropic = new Anthropic({
+    anthropicClient = new Anthropic({
       apiKey: Deno.env.get('ANTHROPIC_API_KEY'),
     });
-
-    const prompt = `You are a Canadian real estate expert. Analyze this rental property and provide a detailed rent estimate.
-
-Property Details:
-- Address: ${address}, ${city}, ${province}
-- Bedrooms: ${bedrooms}
-- Bathrooms: ${bathrooms}
-- Square Feet: ${sqft}
-- Amenities: ${amenities?.join(', ') || 'None specified'}
-
-Please provide:
-1. Estimated monthly rent range (low and high)
-2. Key factors affecting the price
-3. Market comparison insights
-4. Recommendations for landlords or tenants
-
-Format your response in JSON with this structure:
-{
-  "estimatedRent": { "low": number, "high": number },
-  "averageRent": number,
-  "confidence": "high" | "medium" | "low",
-  "factors": [string],
-  "marketInsights": string,
-  "recommendations": string
-}`;
-
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
-
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-    
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    const analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-      estimatedRent: { low: 1500, high: 2500 },
-      averageRent: 2000,
-      confidence: "medium",
-      factors: ["Location", "Size", "Amenities"],
-      marketInsights: "Market analysis unavailable",
-      recommendations: "Please provide more property details"
-    };
-
-    return c.json({ success: true, analysis });
-
-  } catch (error) {
-    console.log('AI rent estimate error:', error);
-    return c.json({ error: 'Failed to generate rent estimate' }, { status: 500 });
   }
-});
-
-// AI Compare Listings
-app.post("/make-server-2071350e/ai/compare-listings", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { listings } = body;
-
-    if (!listings || listings.length < 2) {
-      return c.json({ error: 'At least 2 listings required for comparison' }, { status: 400 });
-    }
-
-    const Anthropic = (await import('npm:@anthropic-ai/sdk@0.32')).default;
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY'),
-    });
-
-    const listingsText = listings.map((l: any, i: number) => `
-Listing ${i + 1}:
-- Title: ${l.title}
-- Price: $${l.price}/month
-- Location: ${l.address}, ${l.city}
-- Bedrooms: ${l.beds}
-- Bathrooms: ${l.baths}
-- Square Feet: ${l.sqft}
-- Tags: ${l.tags?.map((t: any) => t.label).join(', ')}
-    `).join('\n');
-
-    const prompt = `You are a Canadian real estate expert helping a tenant compare rental properties. Analyze these listings and provide a detailed comparison.
-
-${listingsText}
-
-Please provide:
-1. Best overall value
-2. Pros and cons for each listing
-3. Which listing is best for different tenant profiles (budget-conscious, luxury-seeking, family, etc.)
-4. Red flags or concerns
-5. Final recommendation
-
-Format your response in JSON with this structure:
-{
-  "bestValue": number (listing index),
-  "comparisons": [
-    {
-      "listingIndex": number,
-      "pros": [string],
-      "cons": [string],
-      "valueScore": number (1-10)
-    }
-  ],
-  "recommendations": {
-    "budgetConscious": number,
-    "luxurySeeking": number,
-    "family": number
-  },
-  "redFlags": [string],
-  "summary": string
-}`;
-
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2048,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
-
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    const comparison = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-      bestValue: 0,
-      comparisons: [],
-      recommendations: {},
-      redFlags: [],
-      summary: "Comparison unavailable"
-    };
-
-    return c.json({ success: true, comparison });
-
-  } catch (error) {
-    console.log('AI comparison error:', error);
-    return c.json({ error: 'Failed to compare listings' }, { status: 500 });
-  }
-});
-
-// AI Explain Lease Terms
-app.post("/make-server-2071350e/ai/explain-lease", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { question, leaseText, province } = body;
-
-    const Anthropic = (await import('npm:@anthropic-ai/sdk@0.32')).default;
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY'),
-    });
-
-    const prompt = question 
-      ? `You are a Canadian tenant rights expert. Answer this question about lease terms in ${province || 'Canada'}:
-
-Question: ${question}
-
-${leaseText ? `Lease Context: ${leaseText}` : ''}
-
-Provide a clear, helpful explanation in plain language. Include relevant tenant rights and landlord obligations under Canadian/provincial law.`
-      : `You are a Canadian tenant rights expert. Explain common lease terms and tenant rights in ${province || 'Canada'}.
-
-Provide:
-1. Key lease terms explained in plain language
-2. Tenant rights and protections
-3. Landlord obligations
-4. Red flags to watch for
-5. Tips for first-time renters
-
-Format as JSON:
-{
-  "explanation": string,
-  "keyTerms": [{ "term": string, "definition": string }],
-  "tenantRights": [string],
-  "landlordObligations": [string],
-  "redFlags": [string],
-  "tips": [string]
-}`;
-
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2048,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
-
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-    
-    if (question) {
-      return c.json({ success: true, explanation: responseText });
-    } else {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      const leaseGuide = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-        explanation: responseText,
-        keyTerms: [],
-        tenantRights: [],
-        landlordObligations: [],
-        redFlags: [],
-        tips: []
-      };
-      return c.json({ success: true, leaseGuide });
-    }
-
-  } catch (error) {
-    console.log('AI lease explanation error:', error);
-    return c.json({ error: 'Failed to explain lease terms' }, { status: 500 });
-  }
-});
-
-// AI General Chat (for AIAssistant sidebar and Premium page) - ENHANCED
-app.post("/make-server-2071350e/ai/chat", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { message, context, conversationHistory, pageContext, userId } = body;
-
-    // Save conversation to KV store if userId provided (conversation memory)
-    if (userId && userId !== 'demo-user') {
-      const conversationId = `conversation:${userId}:${Date.now()}`;
-      await kv.set(conversationId, {
-        userId,
-        message,
-        context,
-        pageContext,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    const Anthropic = (await import('npm:@anthropic-ai/sdk@0.32')).default;
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY'),
-    });
-
-    // Build conversation messages
-    const messages = [];
-    
-    // Add conversation history if provided
-    if (conversationHistory && conversationHistory.length > 0) {
-      conversationHistory.forEach((msg: any) => {
-        messages.push({
-          role: msg.role,
-          content: msg.content,
-        });
-      });
-    }
-    
-    // Add current message
-    messages.push({
-      role: 'user',
-      content: message,
-    });
-
-    // ENHANCED SYSTEM PROMPT with comprehensive Canadian landlord context
-    const systemPrompt = `You are KAYA AI, an expert assistant for Canadian landlords and property managers powered by Claude 3.5 Sonnet. You are specifically trained on:
-
-📚 EXPERTISE AREAS:
-1. Canadian Residential Tenancies Act (RTA) and all provincial tenant laws across Canada
-2. Landlord and Tenant Board (LTB) procedures, forms (N4, N5, N7, N12, L1, L2, etc.), and hearing processes
-3. Property management best practices and optimization strategies
-4. Advanced tenant screening, risk assessment, and application evaluation
-5. Lease agreements, legal compliance, and contractual obligations
-6. Rent collection, arrears management, and financial planning
-7. Maintenance coordination and contractor management
-8. Canadian tax implications for rental properties
-9. Multi-province compliance (BC, AB, SK, MB, ON, QC, NB, NS, PE, NL)
-
-🎯 YOUR ROLE:
-- Provide accurate, actionable, and professional advice
-- Reference specific laws, regulations, and LTB decisions when applicable
-- Be concise but thorough - aim for clarity and practical application
-- Use Canadian terminology (e.g., "tenant" not "renter", "LTB" not "court")
-- Consider both landlord rights AND tenant protections
-- Flag potential legal risks and suggest compliant alternatives
-- Provide step-by-step guidance when appropriate
-
-${pageContext ? `\n📍 CURRENT CONTEXT: The user is on the "${pageContext}" page of KAYA platform.\nProvide responses relevant to this context when applicable.` : ''}
-
-${context ? `\n💡 ADDITIONAL CONTEXT: ${context}` : ''}
-
-Remember: You're not just answering questions - you're helping landlords run better, more compliant, and more profitable rental businesses across Canada.`;
-
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: messages,
-    });
-
-    const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-
-    // Save AI response to conversation history (memory)
-    if (userId && userId !== 'demo-user') {
-      const responseId = `conversation:${userId}:response:${Date.now()}`;
-      await kv.set(responseId, {
-        userId,
-        response: responseText,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    return c.json({ 
-      success: true, 
-      response: responseText,
-      messageId: Date.now().toString()
-    });
-
-  } catch (error) {
-    console.log('AI chat error:', error);
-    return c.json({ error: 'Failed to process chat message' }, { status: 500 });
-  }
-});
-
-// AI Voice Commands - ENHANCED with context awareness
-app.post("/make-server-2071350e/ai/voice-command", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { command, userId, userContext } = body;
-
-    const Anthropic = (await import('npm:@anthropic-ai/sdk@0.32')).default;
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY'),
-    });
-
-    // Get user's data context if userId provided (makes AI smarter)
-    let contextualInfo = '';
-    if (userId && userId !== 'demo-user') {
-      try {
-        const properties = await kv.getByPrefix(`property:${userId}:`);
-        const applications = await kv.getByPrefix(`application:landlord:${userId}:`);
-        const payments = await kv.getByPrefix(`payment:${userId}:`);
-        
-        const pendingApps = applications.filter((a: any) => a.status === 'submitted' || a.status === 'landlord_review').length;
-        const completedPayments = payments.filter((p: any) => p.status === 'completed');
-        const totalRevenue = completedPayments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
-        
-        contextualInfo = `
-USER DATA CONTEXT (Real-time from database):
-- Total Properties: ${properties.length}
-- Pending Applications: ${pendingApps}
-- Total Revenue (All-time): $${totalRevenue.toLocaleString()}
-- Recent Payments: ${payments.length}
-`;
-      } catch (e) {
-        console.log('Could not fetch user context:', e);
-      }
-    }
-
-    const systemPrompt = `You are KAYA Voice AI, an intelligent voice assistant for Canadian landlords and property managers.
-
-🎤 YOUR CAPABILITIES:
-When given a voice command, provide:
-1. A natural, conversational response (as if speaking to the user)
-2. Actionable data and specific insights
-3. Suggested follow-up actions
-4. Proactive recommendations based on the data
-
-${contextualInfo}
-
-📋 SAMPLE COMMANDS YOU HANDLE:
-- "Show me high-risk tenant applications"
-- "What's my total revenue this month?"
-- "List all maintenance requests"
-- "Which properties have vacancies?"
-- "Generate an N4 notice for late rent"
-- "Summarize LTB hearing requirements"
-- "Show me tenants with lease renewals coming up"
-- "What's my occupancy rate?"
-- "Find contractors for plumbing work"
-- "Review my financial performance"
-
-💬 RESPONSE STYLE:
-- Conversational and professional (like a helpful assistant)
-- Provide specific numbers and data when available
-- If you need clarification, ask follow-up questions
-- Suggest related actions the user might want to take next
-- Use emojis sparingly for visual clarity
-
-${userContext ? `\nUSER CONTEXT: ${userContext}` : ''}
-
-Respond as if you're a knowledgeable assistant speaking directly to the user. Be helpful and proactive.`;
-
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1200,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: command,
-        },
-      ],
-    });
-
-    const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-
-    return c.json({ 
-      success: true, 
-      response: responseText,
-      transcript: command
-    });
-
-  } catch (error) {
-    console.log('AI voice command error:', error);
-    return c.json({ error: 'Failed to process voice command' }, { status: 500 });
-  }
-});
-
-// AI Tenant Screening
-app.post("/make-server-2071350e/ai/screen-tenant", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { 
-      tenantName,
-      income,
-      creditScore,
-      employmentStatus,
-      rentalHistory,
-      references,
-      additionalInfo 
-    } = body;
-
-    const Anthropic = (await import('npm:@anthropic-ai/sdk@0.32')).default;
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY'),
-    });
-
-    const prompt = `You are an AI tenant screening expert for Canadian landlords. Analyze this tenant application and provide a detailed risk assessment.
-
-Tenant Information:
-- Name: ${tenantName}
-- Annual Income: ${income ? `$${income}` : 'Not provided'}
-- Credit Score: ${creditScore || 'Not provided'}
-- Employment: ${employmentStatus || 'Not provided'}
-- Rental History: ${rentalHistory || 'Not provided'}
-- References: ${references || 'Not provided'}
-- Additional Info: ${additionalInfo || 'None'}
-
-Provide your analysis in JSON format:
-{
-  "riskScore": number (0-100, where 0 is lowest risk),
-  "riskLevel": "low" | "medium" | "high",
-  "recommendation": "approve" | "conditional" | "deny",
-  "strengths": [string],
-  "concerns": [string],
-  "redFlags": [string],
-  "verificationNeeded": [string],
-  "summary": string,
-  "incomeToRentRatio": string (if income provided),
-  "suggestedActions": [string]
+  return anthropicClient;
 }
 
-Consider Canadian tenant screening best practices and legal requirements.`;
+async function serveAi(c: any, name: string) {
+  const result = await dispatchAiRequest({
+    authorizationHeader: c.req.header('Authorization'),
+    anonKey: Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    getUser: verifyAccessToken,
+    increment: (bucket: string) => kv.atomicIncrement(bucket, 'count', 0),
+    path: name,
+    readBody: () => c.req.json(),
+    model: {
+      create: async (params: any) => {
+        const client = await aiModel();
+        return client.messages.create(params);
+      },
+    },
+    kv,
+  });
 
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2048,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
-
-    const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    
-    const screening = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-      riskScore: 50,
-      riskLevel: "medium",
-      recommendation: "conditional",
-      strengths: [],
-      concerns: ["Insufficient data for complete analysis"],
-      redFlags: [],
-      verificationNeeded: ["All information"],
-      summary: "Unable to complete screening with provided information",
-      suggestedActions: ["Request complete application"]
-    };
-
-    return c.json({ success: true, screening });
-
-  } catch (error) {
-    console.log('AI tenant screening error:', error);
-    return c.json({ error: 'Failed to screen tenant' }, { status: 500 });
+  if (result.headers) {
+    return c.json(result.body, { status: result.status, headers: result.headers });
   }
-});
+  return c.json(result.body, { status: result.status });
+}
+
+for (const name of AI_ROUTE_NAMES) {
+  app.post(`/make-server-2071350e/ai/${name}`, (c) => serveAi(c, name));
+}
 
 
 // ============================================================================
