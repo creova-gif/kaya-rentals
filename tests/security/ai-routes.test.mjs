@@ -366,15 +366,13 @@ test('chat and voice use the authenticated user id, not the body user id', async
   ]);
 });
 
-test('handler module and both function copies stay free of a live model client', () => {
+test('handler module stays free of a live model client in the active function', () => {
+  // main keeps a single Edge Function tree at make-server-2071350e/
+  // (the legacy supabase/functions/server/ mirror was removed).
   const root = new URL('../../supabase/functions/', import.meta.url);
   const handler = readFileSync(new URL('make-server-2071350e/ai_routes.mjs', root), 'utf8');
-  const copy = readFileSync(new URL('server/ai_routes.mjs', root), 'utf8');
   const index = readFileSync(new URL('make-server-2071350e/index.ts', root), 'utf8');
-  const indexCopy = readFileSync(new URL('server/index.tsx', root), 'utf8');
 
-  assert.equal(handler, copy);
-  assert.equal(index, indexCopy);
   assert.equal(handler.includes('ANTHROPIC'), false);
   assert.equal(handler.includes('Deno.env'), false);
   assert.equal(handler.includes('ai-screening'), false);
