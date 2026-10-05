@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Sparkles, X, Send, Loader2, Minimize2, Maximize2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
+import { postAiRoute } from "../services/ai-client";
 
 interface Message {
   role: "user" | "assistant";
@@ -14,7 +14,8 @@ interface GlobalAIAssistantProps {
   userId?: string;
 }
 
-export function GlobalAIAssistant({ pageContext, userContext, userId }: GlobalAIAssistantProps) {
+// userId is ignored: the server binds chat storage to the session user.
+export function GlobalAIAssistant({ pageContext, userContext, userId: _userId }: GlobalAIAssistantProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [input, setInput] = useState("");
@@ -100,25 +101,12 @@ export function GlobalAIAssistant({ pageContext, userContext, userId }: GlobalAI
         content: msg.content
       }));
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/chat`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message: input,
-            context: userContext || "KAYA landlord platform assistant",
-            pageContext: pageContext || "Dashboard",
-            userId: userId || 'anonymous',
-            conversationHistory: conversationHistory.slice(0, -1)
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('chat', {
+        message: input,
+        context: userContext || "KAYA landlord platform assistant",
+        pageContext: pageContext || "Dashboard",
+        conversationHistory: conversationHistory.slice(0, -1)
+      });
       
       if (data.success) {
         setMessages([...newMessages, {
@@ -128,7 +116,7 @@ export function GlobalAIAssistant({ pageContext, userContext, userId }: GlobalAI
       } else {
         setMessages([...newMessages, {
           role: "assistant",
-          content: "I apologize, but I encountered an error. Please try again."
+          content: data.error || "I apologize, but I encountered an error. Please try again."
         }]);
       }
     } catch (error) {

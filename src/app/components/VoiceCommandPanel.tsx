@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "motion/react";
 import { Mic, X, Sparkles, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
+import { postAiRoute } from "../services/ai-client";
 
 interface VoiceCommandPanelProps {
   isOpen: boolean;
@@ -44,28 +44,15 @@ export function VoiceCommandPanel({ isOpen, onClose }: VoiceCommandPanelProps) {
     setIsLoading(true);
     
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/voice-command`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            command: command,
-            userId: 'demo-user',
-            userContext: "Voice Commands - Quick AI Actions"
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('voice-command', {
+        command: command,
+        userContext: "Voice Commands - Quick AI Actions"
+      });
       
       if (data.success) {
         setResponse(data.response);
       } else {
-        setResponse("I apologize, but I couldn't process that command. Please try again.");
+        setResponse(data.error || "I apologize, but I couldn't process that command. Please try again.");
       }
     } catch (error) {
       console.error('Voice command error:', error);

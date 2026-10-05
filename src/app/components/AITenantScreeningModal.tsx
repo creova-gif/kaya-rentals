@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X, Sparkles, Loader2, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { motion } from "motion/react";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
+import { postAiRoute } from "../services/ai-client";
 
 interface AITenantScreeningModalProps {
   isOpen: boolean;
@@ -42,39 +42,32 @@ export function AITenantScreeningModal({ isOpen, onClose, tenantData }: AITenant
   
   const [screening, setScreening] = useState<ScreeningResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/screen-tenant`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            tenantName: formData.tenantName,
-            income: formData.income ? parseInt(formData.income) : null,
-            creditScore: formData.creditScore ? parseInt(formData.creditScore) : null,
-            employmentStatus: formData.employmentStatus,
-            rentalHistory: formData.rentalHistory,
-            references: formData.references,
-            additionalInfo: formData.additionalInfo
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('screen-tenant', {
+        tenantName: formData.tenantName,
+        income: formData.income ? parseInt(formData.income) : null,
+        creditScore: formData.creditScore ? parseInt(formData.creditScore) : null,
+        employmentStatus: formData.employmentStatus,
+        rentalHistory: formData.rentalHistory,
+        references: formData.references,
+        additionalInfo: formData.additionalInfo
+      });
       
       if (data.success) {
         setScreening(data.screening);
+      } else {
+        setError(data.error || 'Failed to screen tenant');
       }
-    } catch (error) {
-      console.error('Tenant screening error:', error);
+    } catch (err) {
+      console.error('Tenant screening error:', err);
+      setError('Failed to screen tenant');
     } finally {
       setIsLoading(false);
     }
@@ -217,6 +210,10 @@ export function AITenantScreeningModal({ isOpen, onClose, tenantData }: AITenant
                   placeholder="Any other relevant details..."
                 />
               </div>
+
+              {error && (
+                <p className="text-sm text-[#854F0B]">{error}</p>
+              )}
 
               <button
                 type="submit"

@@ -15,7 +15,7 @@ import {
   Zap
 } from "lucide-react";
 import { useNavigate } from "react-router";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
+import { postAiRoute } from "../services/ai-client";
 
 interface Command {
   id: string;
@@ -31,7 +31,8 @@ interface AICommandPaletteProps {
   userId?: string;
 }
 
-export function AICommandPalette({ userId }: AICommandPaletteProps) {
+// userId is ignored: voice context is loaded for the session user on the server.
+export function AICommandPalette({ userId: _userId }: AICommandPaletteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -191,28 +192,15 @@ export function AICommandPalette({ userId }: AICommandPaletteProps) {
     setAiResponse(null);
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/voice-command`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            command: query,
-            userId: userId || 'anonymous',
-            userContext: "Command Palette - Quick AI Action"
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('voice-command', {
+        command: query,
+        userContext: "Command Palette - Quick AI Action"
+      });
       
       if (data.success) {
         setAiResponse(data.response);
       } else {
-        setAiResponse("I couldn't process that command. Please try rephrasing.");
+        setAiResponse(data.error || "I couldn't process that command. Please try rephrasing.");
       }
     } catch (error) {
       console.error('AI command error:', error);

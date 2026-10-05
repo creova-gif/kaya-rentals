@@ -15,4 +15,4 @@ jobs:
           cache: npm
       - run: npm install
       - run: npm run build
-      # No lint/test script currently defined in package.json — add one to expand this workflow
+      - run: npm test

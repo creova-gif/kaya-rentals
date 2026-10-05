@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Heart, Check, MapPin, ArrowRight, Sparkles, X, Loader2, TrendingUp, AlertCircle, Building2, Home, Layers, Building, Search, BedDouble, Bath, Ruler, Map, Lock, Lightbulb } from "lucide-react";
-import { projectId, publicAnonKey } from "/utils/supabase/info";
+import { postAiRoute } from "../services/ai-client";
 import { useNavigate } from "react-router";
 import { PublicNav } from "../components/PublicNav";
 import { PublicFooter } from "../components/PublicFooter";
@@ -74,6 +74,7 @@ export function PropertyListingsRedesign() {
   const [rentEstimate, setRentEstimate] = useState<RentEstimate | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [leaseGuide, setLeaseGuide] = useState<LeaseGuide | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
 
   const listings: Listing[] = [
     {
@@ -171,36 +172,28 @@ export function PropertyListingsRedesign() {
 
   const handleGetRentEstimate = async () => {
     setLoading(true);
+    setAiNotice(null);
     setShowRentEstimate(true);
     
     try {
       const firstListing = listings[0];
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/rent-estimate`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            address: firstListing.address,
-            city: firstListing.city,
-            province: 'ON',
-            bedrooms: firstListing.beds,
-            bathrooms: firstListing.baths,
-            sqft: firstListing.sqft,
-            amenities: firstListing.tags.map(t => t.label),
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('rent-estimate', {
+        address: firstListing.address,
+        city: firstListing.city,
+        province: 'ON',
+        bedrooms: firstListing.beds,
+        bathrooms: firstListing.baths,
+        sqft: firstListing.sqft,
+        amenities: firstListing.tags.map(t => t.label),
+      });
       if (data.success) {
         setRentEstimate(data.analysis);
+      } else {
+        setAiNotice(data.error || 'Failed to generate rent estimate');
       }
     } catch (error) {
       console.error('Error getting rent estimate:', error);
+      setAiNotice('Failed to generate rent estimate');
     } finally {
       setLoading(false);
     }
@@ -208,29 +201,21 @@ export function PropertyListingsRedesign() {
 
   const handleCompareListings = async () => {
     setLoading(true);
+    setAiNotice(null);
     setShowComparison(true);
     
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/compare-listings`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            listings: listings.slice(0, 3),
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('compare-listings', {
+        listings: listings.slice(0, 3),
+      });
       if (data.success) {
         setComparison(data.comparison);
+      } else {
+        setAiNotice(data.error || 'Failed to compare listings');
       }
     } catch (error) {
       console.error('Error comparing listings:', error);
+      setAiNotice('Failed to compare listings');
     } finally {
       setLoading(false);
     }
@@ -238,29 +223,21 @@ export function PropertyListingsRedesign() {
 
   const handleExplainLease = async () => {
     setLoading(true);
+    setAiNotice(null);
     setShowLeaseGuide(true);
     
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-2071350e/ai/explain-lease`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            province: 'ON',
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await postAiRoute('explain-lease', {
+        province: 'ON',
+      });
       if (data.success) {
         setLeaseGuide(data.leaseGuide);
+      } else {
+        setAiNotice(data.error || 'Failed to explain lease terms');
       }
     } catch (error) {
       console.error('Error explaining lease:', error);
+      setAiNotice('Failed to explain lease terms');
     } finally {
       setLoading(false);
     }
@@ -650,6 +627,8 @@ export function PropertyListingsRedesign() {
                   <Loader2 className="w-8 h-8 text-[#1D9E75] animate-spin mb-3" />
                   <p className="text-sm text-[#6B7280]">Analyzing market data with Claude AI...</p>
                 </div>
+              ) : aiNotice ? (
+                <p className="text-sm text-[#6B7280]">{aiNotice}</p>
               ) : rentEstimate ? (
                 <div className="space-y-6">
                   <div className="bg-[#E1F5EE] rounded-[14px] p-6">
@@ -715,6 +694,8 @@ export function PropertyListingsRedesign() {
                   <Loader2 className="w-8 h-8 text-[#1D9E75] animate-spin mb-3" />
                   <p className="text-sm text-[#6B7280]">Comparing listings with Claude AI...</p>
                 </div>
+              ) : aiNotice ? (
+                <p className="text-sm text-[#6B7280]">{aiNotice}</p>
               ) : comparison ? (
                 <div className="space-y-6">
                   <div className="bg-[#E1F5EE] rounded-[14px] p-4">
@@ -795,6 +776,8 @@ export function PropertyListingsRedesign() {
                   <Loader2 className="w-8 h-8 text-[#1D9E75] animate-spin mb-3" />
                   <p className="text-sm text-[#6B7280]">Getting lease insights from Claude AI...</p>
                 </div>
+              ) : aiNotice ? (
+                <p className="text-sm text-[#6B7280]">{aiNotice}</p>
               ) : leaseGuide ? (
                 <div className="space-y-6">
                   <div className="bg-[#E1F5EE] rounded-[14px] p-4">
