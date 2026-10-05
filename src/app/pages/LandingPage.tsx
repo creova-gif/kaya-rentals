@@ -447,7 +447,7 @@ export function LandingPage() {
                 gap: 8
               }}
             >
-              Get started <ArrowRight size={16} />
+              Request early access <ArrowRight size={16} />
             </button>
           </div>
 
