@@ -141,7 +141,7 @@ export function LandingPage() {
               onClick={() => navigate("/signup")}
               style={{ padding: "14px 32px", background: G, color: "#fff", border: "none", borderRadius: 40, fontSize: 15, fontWeight: 600, cursor: "pointer" }}
             >
-              Start free trial
+              Request early access
             </button>
             <button 
               onClick={() => navigate("/features")}
@@ -452,7 +452,7 @@ export function LandingPage() {
           </div>
 
           <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-            No credit card required · 14-day free trial
+            Pre-launch · join the early-access waitlist
           </p>
         </div>
       </section>
