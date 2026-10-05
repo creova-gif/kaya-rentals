@@ -304,7 +304,7 @@ async function handleChat(body, { model, user, kv }) {
 
     const messages = [];
     if (conversationHistory && conversationHistory.length > 0) {
-      conversationHistory.forEach((msg) => {
+      sanitizeConversationHistory(conversationHistory).forEach((msg) => {
         messages.push({
           role: msg.role,
           content: msg.content,
@@ -532,6 +532,38 @@ const HANDLERS = {
   'screen-tenant': handleScreenTenant,
 };
 
+const MAX_AI_BODY_CHARS = 50_000;
+const MAX_HISTORY_MESSAGES = 12;
+const MAX_HISTORY_CONTENT_CHARS = 4_000;
+const MAX_STRING_FIELD_CHARS = 8_000;
+
+function estimateJsonSize(value) {
+  try {
+    return JSON.stringify(value ?? null).length;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function sanitizeConversationHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((msg) => msg && (msg.role === 'user' || msg.role === 'assistant'))
+    .slice(-MAX_HISTORY_MESSAGES)
+    .map((msg) => ({
+      role: msg.role,
+      content: typeof msg.content === 'string'
+        ? msg.content.slice(0, MAX_HISTORY_CONTENT_CHARS)
+        : '',
+    }))
+    .filter((msg) => msg.content.length > 0);
+}
+
+function boundString(value, max = MAX_STRING_FIELD_CHARS) {
+  if (typeof value !== 'string') return value;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
 export async function dispatchAiRequest({
   authorizationHeader,
   anonKey,
@@ -561,6 +593,23 @@ export async function dispatchAiRequest({
       parsed = await readBody();
     } catch {
       return { status: 400, body: { error: 'Invalid JSON body' } };
+    }
+  }
+
+  if (estimateJsonSize(parsed) > MAX_AI_BODY_CHARS) {
+    return { status: 413, body: { error: 'Request body too large' } };
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    if ('conversationHistory' in parsed) {
+      parsed.conversationHistory = sanitizeConversationHistory(parsed.conversationHistory);
+    }
+    if ('leaseText' in parsed) parsed.leaseText = boundString(parsed.leaseText);
+    if ('message' in parsed) parsed.message = boundString(parsed.message, 4_000);
+    if ('command' in parsed) parsed.command = boundString(parsed.command, 4_000);
+    if ('context' in parsed) parsed.context = boundString(parsed.context, 4_000);
+    if (Array.isArray(parsed.listings) && parsed.listings.length > 10) {
+      parsed.listings = parsed.listings.slice(0, 10);
     }
   }
 
